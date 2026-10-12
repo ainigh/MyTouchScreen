@@ -4,7 +4,7 @@ import XCTest
 final class PointerStateMachineTests: XCTestCase {
     func testHoverMovesCursorOnlyWhenEngaged() {
         let frames = SyntheticStream.ramp(from: Point2(0.6, 0.45), to: Point2(0.4, 0.45), duration: 0.5)
-        let idle = PointerStateMachine(displays: [testDisplay])
+        let idle = PointerStateMachine(config: .pose, displays: [testDisplay])
         XCTAssertTrue(drive(idle, frames).intents.isEmpty, "a disengaged machine must never move the cursor")
 
         let machine = engagedMachine()
@@ -134,7 +134,7 @@ final class PointerStateMachineTests: XCTestCase {
             t = frame.timestamp
             if machine.needsTicks && !changedMidGlide {
                 changedMidGlide = true
-                var config = GestureConfig.default
+                var config = GestureConfig.pose
                 config.momentumFriction += 1
                 machine.updateConfig(config)
                 XCTAssertTrue(machine.needsTicks, "a settings change must not drop the glide")
@@ -151,7 +151,7 @@ final class PointerStateMachineTests: XCTestCase {
     }
 
     func testReverseScrollDirectionSetting() {
-        var config = GestureConfig.default
+        var config = GestureConfig.pose
         config.naturalScrolling = false
         let out = drive(engagedMachine(config), SyntheticStream.fistScroll(offset: Point2(0, 0.15)))
         XCTAssertLessThan(out.scrolls(.changed).map { $0.1 }.reduce(0, +), -100)
@@ -164,11 +164,11 @@ final class PointerStateMachineTests: XCTestCase {
 
     func testPalmHoldEngagesOnlyAfterHoldDuration() {
         // 0.4 s is too short.
-        let short = PointerStateMachine(displays: [testDisplay])
+        let short = PointerStateMachine(config: .pose, displays: [testDisplay])
         drive(short, SyntheticStream.palmHold(hold: 0.4))
         XCTAssertFalse(short.isEngaged)
 
-        let machine = PointerStateMachine(displays: [testDisplay])
+        let machine = PointerStateMachine(config: .pose, displays: [testDisplay])
         let out = drive(machine, SyntheticStream.palmHold(hold: 1.0))
         XCTAssertTrue(machine.isEngaged)
         XCTAssertEqual(out.events.filter { $0 == .engaged }.count, 1, "holding longer must not toggle again")
@@ -218,7 +218,7 @@ final class PointerStateMachineTests: XCTestCase {
     }
 
     func testAppSwitcherWhenEnabled() {
-        var config = GestureConfig.default
+        var config = GestureConfig.pose
         config.appSwitcherEnabled = true
         let out = drive(engagedMachine(config), SyntheticStream.pinchTaps(at: [0.5], tapDuration: 0.4, finger: .ring))
         XCTAssertEqual(out.intents.first { if case .key = $0 { return true } else { return false } },
@@ -232,7 +232,7 @@ final class PointerStateMachineTests: XCTestCase {
     }
 
     func testDwellClick() {
-        var config = GestureConfig.default
+        var config = GestureConfig.pose
         config.dwellClickEnabled = true
         let out = drive(engagedMachine(config), SyntheticStream.steady(duration: 2.5))
         XCTAssertEqual(out.clicks.count, 1, "dwell clicks once, then waits for movement")
@@ -347,7 +347,7 @@ final class PointerStateMachineTests: XCTestCase {
 
     func testAppSwitcherWithZeroStepDoesNotTrap() {
         // Regression: Int(x / 0) trapped on an imported settings file with a zero step.
-        var config = GestureConfig.default
+        var config = GestureConfig.pose
         config.appSwitcherEnabled = true
         config.appSwitcherStepBox = 0
         let out = drive(engagedMachine(config), SyntheticStream.pinchTaps(at: [0.5], tapDuration: 0.4, finger: .ring))

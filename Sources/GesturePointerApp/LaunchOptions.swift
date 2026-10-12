@@ -5,6 +5,8 @@ import Foundation
 /// passes to apps (-psn_…, -NS…, -Apple…).
 struct LaunchOptions {
     var recordPath: String?
+    /// With --record: run the guided tuning session (prompts, labeled segments).
+    var script = false
     var replayPath: String?
     var noOverlay = false
     var doctor = false
@@ -15,6 +17,8 @@ struct LaunchOptions {
     Usage: GesturePointer [options]
 
       --record <file.json>   Record the hand-landmark stream to a JSON file while running.
+      --script               With --record: guided tuning session. The overlay prompts each
+                             gesture 8 times and labels the frames (see tools/tune.md).
       --replay <file.json>   Drive the app from a recording instead of the camera, then quit.
       --dry-run              With --replay: print intents instead of moving the real cursor.
       --no-overlay           No overlay windows; print one line per camera frame (fps, landmarks).
@@ -34,6 +38,8 @@ struct LaunchOptions {
             case "--replay":
                 guard let path = iterator.next() else { return .failure(LaunchError("--replay needs a file path")) }
                 options.replayPath = path
+            case "--script":
+                options.script = true
             case "--no-overlay":
                 options.noOverlay = true
             case "--doctor":
@@ -53,6 +59,12 @@ struct LaunchOptions {
         }
         if options.dryRun && options.replayPath == nil {
             return .failure(LaunchError("--dry-run only makes sense with --replay"))
+        }
+        if options.script && options.recordPath == nil {
+            return .failure(LaunchError("--script needs --record <file.json>"))
+        }
+        if options.script && options.noOverlay {
+            return .failure(LaunchError("--script shows its prompts in the overlay; it can't be combined with --no-overlay"))
         }
         if options.recordPath != nil && options.replayPath != nil {
             return .failure(LaunchError("--record and --replay can't be combined"))

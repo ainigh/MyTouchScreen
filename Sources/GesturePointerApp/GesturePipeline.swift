@@ -86,8 +86,10 @@ final class GesturePipeline {
 
     func update(config: GestureConfig, zoomStyle: ZoomStyle) {
         queue.async {
-            self.machine.updateConfig(config)
             self.synth.zoomStyle = zoomStyle
+            // Switching input model mid-gesture returns the mouse-up / zoom end it needs.
+            self.perform(self.machine.updateConfig(config))
+            self.updateTicking()
         }
     }
 
@@ -113,10 +115,11 @@ final class GesturePipeline {
     }
 
     /// Stops recording; `completion` runs on the main queue with the number of frames written.
-    func stopRecording(completion: ((Int) -> Void)? = nil) {
+    /// `segments` are the labels of a guided session, written after the frames.
+    func stopRecording(segments: [LabeledSegment] = [], completion: ((Int) -> Void)? = nil) {
         queue.async {
             let count = self.recorder?.framesWritten ?? 0
-            self.recorder?.close()
+            self.recorder?.close(segments: segments)
             self.recorder = nil
             if let completion { DispatchQueue.main.async { completion(count) } }
         }
@@ -124,7 +127,7 @@ final class GesturePipeline {
 
     /// Disengage, release held buttons/modifiers and close the recording. Blocks until done
     /// (quit path). Frames still in flight from the camera can no longer post anything after.
-    func shutdown() {
+    func shutdown(segments: [LabeledSegment] = []) {
         let mouse = Displays.mouseLocation()
         queue.sync {
             let out = self.machine.setEngaged(false, reason: .menu, at: CACurrentMediaTime(),
@@ -132,7 +135,7 @@ final class GesturePipeline {
             for intent in out.intents { self.synth.perform(intent) }
             self.synth.releaseAll()
             self.synth.postsEvents = false
-            self.recorder?.close()
+            self.recorder?.close(segments: segments)
             self.recorder = nil
             self.tickTimer?.cancel()
             self.tickTimer = nil

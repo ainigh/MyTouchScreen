@@ -16,6 +16,8 @@ public enum PointerState: String, Codable, Equatable {
     case scrolling
     case zooming
     case switchingApps
+    /// Velocity mode: the hand is in a fast segment (a flick that may become a click or scroll).
+    case flicking
 }
 
 struct PointerSample {
@@ -46,6 +48,12 @@ public struct PointerSnapshot: Equatable {
     public var pose: HandPose = .point
     public var outputSuppressed = false
     public var momentumActive = false
+    public var inputModel: InputModel = .velocity
+    /// Velocity mode: cursor positions since the current fast segment's anchor (empty when
+    /// not in a segment), for the overlay's trail.
+    public var segmentTrail: [Point2] = []
+    /// Velocity mode: the most recent classified segment, for the "why not?" readout.
+    public var lastSegment: SegmentReport?
 
     public init() {}
 }
@@ -85,18 +93,18 @@ public struct StepOutput: Equatable {
 /// All timing comes from frame timestamps, never the wall clock, so a replay reproduces a
 /// live session exactly.
 public final class PointerStateMachine {
-    public private(set) var config: GestureConfig
-    public private(set) var snapshot = PointerSnapshot()
+    public internal(set) var config: GestureConfig
+    public internal(set) var snapshot = PointerSnapshot()
     public private(set) var isEngaged = false
-    public private(set) var state: PointerState = .idle
+    public internal(set) var state: PointerState = .idle
 
     private var calibration: CalibrationSet
-    private var mapper: ActiveBoxMapper
+    var mapper: ActiveBoxMapper
     private var mapperDisplayID: String?
-    private var router: DisplayRouter
-    private var smoother: PointerSmoother
+    var router: DisplayRouter
+    var smoother: PointerSmoother
     private var scrollFilter: OneEuroFilter2D
-    private var momentum: ScrollMomentum
+    var momentum: ScrollMomentum
 
     // Hand slots: the pointing hand and an optional second hand (for zoom).
     private var primary: GestureDetector
@@ -113,11 +121,11 @@ public final class PointerStateMachine {
     private var releaseBlend: (offset: Point2, start: Double)?
 
     // Cursor
-    private var cursor: Point2?
-    private var lastEmittedCursor: Point2?
+    var cursor: Point2?
+    var lastEmittedCursor: Point2?
     /// Recent pointer samples, for looking back to where the user was aiming before a pinch.
-    private var history: [PointerSample] = []
-    private var lastBox: Point2?
+    var history: [PointerSample] = []
+    var lastBox: Point2?
 
     // Pinch / click
     private var pinchFinger: PinchFinger?
@@ -127,8 +135,8 @@ public final class PointerStateMachine {
     private var ignoreCurrentPinch = false
     /// True only between an emitted `.down` and its `.up`, so a drag that began while output was
     /// suppressed never sends an unmatched mouse-up.
-    private var buttonDown = false
-    private var lastClick: (time: Double, point: Point2, count: Int)?
+    var buttonDown = false
+    var lastClick: (time: Double, point: Point2, count: Int)?
 
     // Scroll
     private var scrollLastPalm: Point2?
@@ -153,10 +161,18 @@ public final class PointerStateMachine {
     private var dwellAnchor: (time: Double, point: Point2)?
     private var dwellLatched = false
 
-    // Real mouse takes priority.
-    private var outputSuppressedUntil: Double = -.infinity
+    // Velocity mode (see PointerStateMachine+Velocity.swift).
+    var velocityEngine: VelocityEngine
+    /// Box-space offset added to the fingertip after the cursor was warped back to a segment's
+    /// anchor, so the cursor stays where it was put instead of jumping back to the hand.
+    var warpOffset = Point2.zero
+    var lastRawBox: Point2?
+    var trailAnchorTime: Double?
 
-    private var lastTime: Double = 0
+    // Real mouse takes priority.
+    var outputSuppressedUntil: Double = -.infinity
+
+    var lastTime: Double = 0
 
     public init(config: GestureConfig = .default,
                 displays: [DisplayInfo] = [DisplayInfo(id: "main", frame: Rect(x: 0, y: 0, width: 1728, height: 1117))],
@@ -170,7 +186,8 @@ public final class PointerStateMachine {
         self.mapperDisplayID = displayID
         self.smoother = PointerSmoother(config: config)
         self.scrollFilter = OneEuroFilter2D(config.filter)
-        self.momentum = ScrollMomentum(friction: config.momentumFriction, minSpeed: config.momentumMinSpeed)
+        self.momentum = ScrollMomentum(friction: Self.momentumFriction(config), minSpeed: config.momentumMinSpeed)
+        self.velocityEngine = VelocityEngine(params: config.velocity)
         self.primary = GestureDetector(config: Self.detectorConfig(config, calibration.profile(for: displayID)))
         self.secondary = GestureDetector(config: Self.detectorConfig(config, calibration.profile(for: displayID)))
         snapshot.displayID = displayID
@@ -178,13 +195,33 @@ public final class PointerStateMachine {
 
     // MARK: - Configuration
 
-    public func updateConfig(_ newConfig: GestureConfig) {
+    /// Apply new settings. Switching the input model ends whatever the old model was doing
+    /// (the returned intents release a held button), so nothing is left stuck.
+    @discardableResult
+    public func updateConfig(_ newConfig: GestureConfig) -> StepOutput {
+        var out = StepOutput()
+        if newConfig.inputModel != config.inputModel && isEngaged {
+            out.append(cancelActiveGestures(at: lastTime))
+            primary.reset()
+            secondary.reset()
+            history.removeAll()
+            anchorOffset = nil
+            releaseBlend = nil
+        }
         config = newConfig
         router.dwell = newConfig.displayJumpDwell
         smoother.updateConfig(newConfig)
         scrollFilter.parameters = newConfig.filter
-        momentum.updateParameters(friction: newConfig.momentumFriction, minSpeed: newConfig.momentumMinSpeed)
+        momentum.updateParameters(friction: Self.momentumFriction(newConfig), minSpeed: newConfig.momentumMinSpeed)
+        velocityEngine.updateParams(newConfig.velocity)
         rebuildMapper(force: true)
+        refreshSnapshot(at: lastTime)
+        return out
+    }
+
+    /// Pose mode uses its own friction setting; Velocity mode derives it from `momentumDecay`.
+    static func momentumFriction(_ config: GestureConfig) -> Double {
+        config.inputModel == .velocity ? config.velocity.momentumFriction : config.momentumFriction
     }
 
     public func setCalibration(_ set: CalibrationSet) {
@@ -207,7 +244,7 @@ public final class PointerStateMachine {
         return c
     }
 
-    private func rebuildMapper(force: Bool = false) {
+    func rebuildMapper(force: Bool = false) {
         let id = router.current?.id ?? "main"
         guard force || id != mapperDisplayID else { return }
         let profile = calibration.profile(for: id)
@@ -236,6 +273,7 @@ public final class PointerStateMachine {
             cursor = nil
             lastEmittedCursor = nil
             history.removeAll()
+            resetVelocity()
             lastHandSeen = time
             hadHandRecently = false
             out.events.append(.engaged)
@@ -264,7 +302,16 @@ public final class PointerStateMachine {
         if isEngaged && !wasSuppressed {
             out.events.append(.externalMouseTookOver)
         }
-        if state == .dragging {
+        if state == .dragging && config.inputModel == .velocity {
+            // Same rule as below, but Velocity mode has no pinch to wait out: back to hover.
+            if buttonDown {
+                buttonDown = false
+                out.intents.append(.up(x: location.x, y: location.y))
+                out.events.append(.dragEnded)
+            }
+            velocityEngine.cancelDrag()
+            state = .hover
+        } else if state == .dragging {
             // Our synthetic button is still down, so the real mouse would drag whatever the
             // hand grabbed. Let go where the real mouse is (never warp it back), and treat the
             // rest of this pinch as a pause so its release does nothing.
@@ -312,19 +359,24 @@ public final class PointerStateMachine {
 
         // Engagement toggle by open palm, evaluated in every state.
         if let hand = primaryHand {
+            // Velocity mode still runs the detector: the open palm is its one pose (engage).
             let events = primary.update(hand)
-            out.append(handleDetectorEvents(events, isPrimary: true, hand: hand, at: time))
+            if config.inputModel == .pose {
+                out.append(handleDetectorEvents(events, isPrimary: true, hand: hand, at: time))
+            }
             out.append(updatePalmEngagement(hand, at: time))
         }
         if let hand = secondaryHand {
             let events = secondary.update(hand)
-            out.append(handleDetectorEvents(events, isPrimary: false, hand: hand, at: time))
+            if config.inputModel == .pose {
+                out.append(handleDetectorEvents(events, isPrimary: false, hand: hand, at: time))
+            }
         } else if secondarySeen {
             // Second hand left: forget it, and end a zoom it was part of.
             secondarySeen = false
             secondaryLastPalm = nil
             secondary.reset()
-            if state == .zooming && isEngaged { out.append(endZoom()) }
+            if state == .zooming && isEngaged && config.inputModel == .pose { out.append(endZoom()) }
         }
 
         guard isEngaged else {
@@ -336,7 +388,11 @@ public final class PointerStateMachine {
             lastHandSeen = time
             hadHandRecently = true
             if state == .engaged { state = .hover }
-            out.append(updatePointer(hand, secondary: secondaryHand, at: time))
+            if config.inputModel == .velocity {
+                out.append(updatePointerVelocity(hand, secondary: secondaryHand, at: time))
+            } else {
+                out.append(updatePointer(hand, secondary: secondaryHand, at: time))
+            }
         } else {
             out.append(handleMissingHand(at: time))
         }
@@ -358,7 +414,10 @@ public final class PointerStateMachine {
         let primaryRecentlySeen = time - primaryLastSeen <= max(config.handDropoutGrace, 0.3)
         if let last = primaryLastPalm, primaryRecentlySeen {
             let nearest = remaining.enumerated().min { $0.element.palmCenter.distance(to: last) < $1.element.palmCenter.distance(to: last) }
-            if let nearest, nearest.element.palmCenter.distance(to: last) < 0.25 {
+            // With one hand in view, a big jump is still that hand: a fast flick at 30 fps moves
+            // the palm a third of the image between frames. With two, stay strict.
+            let maxJump = hands.count == 1 ? 0.6 : 0.25
+            if let nearest, nearest.element.palmCenter.distance(to: last) < maxJump {
                 primaryHand = nearest.element
                 remaining.remove(at: nearest.offset)
             }
@@ -413,7 +472,7 @@ public final class PointerStateMachine {
             palmHoldStart = nil
             return StepOutput()
         }
-        let busy = [.pinched, .dragging, .scrolling, .zooming, .switchingApps].contains(state)
+        let busy = [.pinched, .dragging, .scrolling, .zooming, .switchingApps, .flicking].contains(state)
         guard !palmLatched, !busy, palmSpeed < config.palmStillnessNormalized else {
             palmHoldStart = nil
             return StepOutput()
@@ -478,6 +537,8 @@ public final class PointerStateMachine {
         pinchFinger = nil
         ignoreCurrentPinch = false
         scrollLastPalm = nil
+        // Any zoom end was emitted above; the engine's own copy would duplicate it.
+        resetVelocity()
         if isEngaged { state = .engaged }
         return out
     }
@@ -595,7 +656,7 @@ public final class PointerStateMachine {
     }
 
     /// Mouse-up for the drag in progress, only if its mouse-down was actually sent.
-    private func releaseButton() -> StepOutput {
+    func releaseButton() -> StepOutput {
         guard buttonDown else { return StepOutput() }
         buttonDown = false
         let p = cursor ?? clickPoint
@@ -644,7 +705,7 @@ public final class PointerStateMachine {
         return StepOutput(intents: [.zoom(factor: 1, phase: .began)], events: [.zoomStarted])
     }
 
-    private func endZoom() -> StepOutput {
+    func endZoom() -> StepOutput {
         zoomLastDistance = nil
         if state == .zooming { state = .hover }
         ignoreCurrentPinch = true
@@ -733,7 +794,7 @@ public final class PointerStateMachine {
         let closest = primary.state.features?.closestPinch.distance ?? 1
         history.append(PointerSample(time: time, cursor: screen, box: smoothed, pinchDistance: closest,
                                      tipOffset: hand[.indexTip] - hand[.indexMCP]))
-        history.removeAll { time - $0.time > 0.6 }
+        history.removeAll { time - $0.time > Self.historySpan }
 
         switch state {
         case .pinched:
@@ -766,7 +827,7 @@ public final class PointerStateMachine {
         return out
     }
 
-    private func emitMove(_ p: Point2, suppressed: Bool) -> StepOutput {
+    func emitMove(_ p: Point2, suppressed: Bool) -> StepOutput {
         guard !suppressed else { return StepOutput() }
         if let last = lastEmittedCursor, last.distance(to: p) < 0.25 { return StepOutput() }
         lastEmittedCursor = p
@@ -855,7 +916,7 @@ public final class PointerStateMachine {
 
     // MARK: Dwell click
 
-    private func updateDwell(_ p: Point2, at time: Double, suppressed: Bool) -> StepOutput {
+    func updateDwell(_ p: Point2, at time: Double, suppressed: Bool) -> StepOutput {
         guard config.dwellClickEnabled, !suppressed else {
             dwellAnchor = nil
             return StepOutput()
@@ -881,6 +942,10 @@ public final class PointerStateMachine {
         return t < 0.25 ? 0 : clamp01((t - 0.25) / 0.75)
     }
 
+    /// How much pointer history is kept: enough to find a velocity segment's anchor after the
+    /// longest segment plus its exit time, and a pinch's closure start.
+    static let historySpan = 1.0
+
     // MARK: Snapshot
 
     private func refreshSnapshot(at time: Double) {
@@ -888,7 +953,9 @@ public final class PointerStateMachine {
         snapshot.isEngaged = isEngaged
         snapshot.cursor = isEngaged ? cursor : nil
         snapshot.displayID = router.current?.id
-        snapshot.pinchProgress = isEngaged ? primary.state.pinchProgress : 0
+        snapshot.pinchProgress = isEngaged && config.inputModel == .pose ? primary.state.pinchProgress : 0
+        snapshot.inputModel = config.inputModel
+        snapshot.segmentTrail = segmentTrail()
         snapshot.engageProgress = engageProgress(at: time)
         snapshot.dwellProgress = dwellProgress(at: time)
         snapshot.displayJumpProgress = router.jumpProgress(at: time)

@@ -1,9 +1,10 @@
-# Wisp — point at your Mac, pinch to click
+# Wisp — point at your Mac, tap the air to click
 
 Wisp is a menu-bar app that turns your Mac's camera into a touch-free pointing device.
-Point your index finger at the screen and a soft halo follows it. Pinch to click, hold the
-pinch to drag, make a fist and move to scroll, pinch with both hands to zoom. It generates real
-system input, so it works in every app.
+Point your index finger at the screen and a soft halo follows it. Your hand is the mouse: a
+quick tap of the whole hand clicks, a long flick scrolls, tap-then-move drags, both hands
+spreading zoom. (Prefer pinches? *Pose mode* — pinch to click, fist to scroll — is one switch
+away in Settings.) It generates real system input, so it works in every app.
 
 Everything runs on the Mac: Apple's Vision framework finds 21 points on your hand, and no
 video is stored or sent anywhere.
@@ -111,7 +112,32 @@ Standby note: while disengaged with "Open palm toggles Wisp" enabled, the camera
 green light too) and Wisp looks at a few frames per second for your palm, using almost no CPU.
 Turn that setting off to stop the camera whenever Wisp is disengaged and use the shortcut.
 
-## Gesture cheat sheet
+## Gesture cheat sheet — Velocity mode (default)
+
+No finger pose needed: Wisp watches how fast and how far your whole hand moves. Tiny or slow
+movements just move the cursor; only short, quick taps and long, fast flicks do something.
+
+| Gesture | Action |
+|---|---|
+| Point and move | Cursor follows the fingertip, live, even during flicks |
+| Hold still a moment, then one quick tap down and back | Left click — where the cursor was before the tap |
+| Two quick taps | Double click |
+| Quick tap sideways | Right click (Settings can swap axes or make any tap a left click) |
+| Long, fast flick up / down | Scroll, with momentum; the cursor snaps back to where the flick started |
+| Flick sideways and back | Horizontal scroll |
+| Tap, then move within ⅓ s | Drag from the tap; hold still ½ s (or tap again) to drop |
+| Both hands moving apart / together quickly | Zoom in / out |
+| Open palm held still | Engage / disengage (the one pose Velocity mode uses) |
+
+Tips: a tap is short — like tapping a table, a few centimetres, out and back in about 0.15 s —
+and starts from a still hand. Moving the pointer quickly up or down at full speed scrolls; move
+diagonally or a bit slower to reposition. A new flick stops a scroll glide immediately. If a
+gesture doesn't do what you expect, turn on the "why not?" readout (Settings → Gestures) and see
+`tools/tune.md`.
+
+## Gesture cheat sheet — Pose mode
+
+Settings → Gestures → Input model → **Pose (pinch)**.
 
 ```
   POINT  — cursor follows        PINCH (tap) — click            PINCH twice — double click
@@ -161,6 +187,11 @@ your fingers started closing, so you don't need to hold perfectly still.
 
 ## The overlay
 
+- **Velocity mode:** during a flick a short trail runs from where it started; when it's
+  classified, a flash appears there — a ripple for a click, a double ripple for a double click,
+  a ring for a right click, an arrow for the scroll direction. The optional **"why not?"
+  readout** (bottom-left) shows the last flick's duration, distance, path, peak speed, axis and
+  the rule that decided.
 - **Halo** around the cursor, colour-coded: teal = pointing, amber = fingers closing (the inner
   ring fills as the pinch closes), violet = dragging, blue = scrolling, rose = zooming.
 - **Outer ring** fills during a palm hold (engage/disengage) or a dwell click.
@@ -179,7 +210,10 @@ Menu bar → *Settings…*
 - **Pointer:** *Active area* (how much hand movement covers the screen), *Steadiness* and
   *Responsiveness* (the 1€ filter's min cutoff and beta), *Rest lock* (how firmly a still cursor
   holds), *Precision* (slow movements are scaled down for fine targeting).
-- **Gestures:** pinch thresholds, hold-to-drag time, scroll speed and direction, momentum,
+- **Gestures:** *Input model* (Velocity / Pose). Velocity: which tap direction is the left
+  click, right click and drag on/off, scroll gain and momentum, scroll direction (follows the
+  system by default), the "why not?" readout, and an *Advanced* section with every Velocity
+  threshold plus *Reset to tuned defaults*. Pose: pinch thresholds, hold-to-drag time, scroll speed and direction, momentum,
   zoom on/off and how zoom is sent (⌘+/⌘− keys, or ⌘+scroll), app switcher, dwell click,
   palm-to-engage, which hand points.
 - **Camera:** device (automatic prefers an iPhone), resolution (720p recommended), preview,
@@ -199,17 +233,19 @@ frame rate and Vision's speed for 5 seconds, and lists anything wrong.
 | Menu-bar icon shows a warning triangle | A permission is missing: menu → *Setup & Permissions…* |
 | Cursor shimmers | Better light on your hand; Settings → Pointer → lower *Steadiness* or raise *Rest lock*. |
 | Cursor feels sluggish | Raise *Responsiveness*; check `make doctor` shows ≥ 30 fps. |
-| Clicks fire by themselves / are missed | Re-run *Calibrate This Display…* (it learns your pinch), or adjust *Pinch closes at*. |
+| Velocity: taps missed, or moving the pointer clicks/scrolls | Turn on the "why not?" readout (Settings → Gestures), reproduce it, and paste the readout to Claude Code — or record a guided session (`tools/tune.md`). |
+| Pose: clicks fire by themselves / are missed | Re-run *Calibrate This Display…* (it learns your pinch), or adjust *Pinch closes at*. |
 | Can't reach screen corners | Calibrate, or lower *Active area*. |
 | Shortcut does nothing | Another app owns it; pick another in Settings → General. |
 | An update failed | Menu → **Copy Update Details**, paste it to Claude Code. Or rerun the install line. |
-| Need help tuning | Record a session (see `tools/tune.md`) and send the file. |
+| Need help tuning | Record a guided session (`--record session.json --script`, see `tools/tune.md`) and send the file. |
 
 Command-line flags (run the binary inside the bundle,
 `~/Applications/GesturePointer.app/Contents/MacOS/GesturePointer`):
 
 ```
 --record <file.json>   record the hand-landmark stream while running
+--script               with --record: guided tuning session (prompts + labeled segments)
 --replay <file.json>   drive the app from a recording instead of the camera, then quit
 --dry-run              with --replay: print intents instead of moving the cursor
 --no-overlay           no overlay; print one line per camera frame (fps, landmarks)
@@ -236,6 +272,8 @@ Sources/GestureCore/        Foundation-only gesture engine (filters, calibration
                             classifier, state machine, replay, sound synthesis) — tested on Linux
 Sources/GesturePointerApp/  macOS shell: camera, Vision, CGEvent input, overlay, menu, settings
 Sources/GestureReplay/      gesture-replay: run a recording through the engine on any OS
+Sources/Tune/               tune: confusion matrix + grid search over a labeled recording
+recordings/                 labeled sessions the tests replay (see tools/tune.md)
 Tests/GestureCoreTests/     `swift test`
 install.sh                  one-line install (release, or build from source), with rollback
 scripts/make-app.sh         bundle + sign + zip (CI, the installer and the updater all use it)

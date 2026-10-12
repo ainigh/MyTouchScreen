@@ -82,6 +82,8 @@ public struct Recording: Codable, Equatable {
     /// Free-form notes: camera name, resolution, app version, config used.
     public var info: [String: String]
     public var frames: [TrackingFrame]
+    /// Labeled stretches from a guided `--record --script` session (absent in plain recordings).
+    public var segments: [LabeledSegment]?
 
     public init(frames: [TrackingFrame], info: [String: String] = [:]) {
         self.format = Self.formatName
@@ -104,6 +106,9 @@ public struct Recording: Codable, Equatable {
             f.timestamp = frame.timestamp - t0 + start
             for i in f.hands.indices { f.hands[i].timestamp = f.timestamp }
             return f
+        }
+        copy.segments = segments?.map {
+            LabeledSegment(label: $0.label, startTime: $0.startTime - t0 + start, endTime: $0.endTime - t0 + start)
         }
         return copy
     }
@@ -173,10 +178,16 @@ public final class RecordingWriter {
         frameCount += 1
     }
 
-    public func close() {
+    /// Finish the file. Labeled segments (guided sessions) are written after the frames; a
+    /// file cut off before this point still loads, without them.
+    public func close(segments: [LabeledSegment] = []) {
         guard !closed else { return }
         closed = true
-        handle.write(Data("\n]}\n".utf8))
+        var tail = "\n]"
+        if !segments.isEmpty, let json = try? encoder.encode(segments), let text = String(data: json, encoding: .utf8) {
+            tail += ",\"segments\":" + text
+        }
+        handle.write(Data((tail + "}\n").utf8))
         handle.closeFile()
     }
 

@@ -27,7 +27,7 @@ func drive(_ machine: PointerStateMachine, _ frames: [TrackingFrame], tickRate: 
     return out
 }
 
-func engagedMachine(_ config: GestureConfig = .default, displays: [DisplayInfo] = [testDisplay]) -> PointerStateMachine {
+func engagedMachine(_ config: GestureConfig = .pose, displays: [DisplayInfo] = [testDisplay]) -> PointerStateMachine {
     let machine = PointerStateMachine(config: config, displays: displays)
     _ = machine.setEngaged(true, reason: .hotkey, at: 0)
     return machine
@@ -52,5 +52,14 @@ extension StepOutput {
     }
     var zooms: [(Double, ZoomPhase)] {
         intents.compactMap { if case let .zoom(f, p) = $0 { return (f, p) } else { return nil } }
+    }
+}
+
+extension GestureConfig {
+    /// The pinch/fist input model. Velocity is the app default; the Pose-mode tests use this.
+    static var pose: GestureConfig {
+        var config = GestureConfig()
+        config.inputModel = .pose
+        return config
     }
 }

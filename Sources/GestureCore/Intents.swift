@@ -77,6 +77,9 @@ public enum PointerEvent: Equatable {
     case displayChanged(String)
     case dwellClicked
     case externalMouseTookOver
+    /// Velocity mode: a fast segment was classified (including "nothing"), for the overlay's
+    /// result flash, the "why not?" readout and `tune`.
+    case segmentClassified(SegmentReport)
 }
 
 public enum DisengageReason: String, Equatable, Codable {
