@@ -16,15 +16,70 @@ The app bundle is `GesturePointer.app`; inside, it calls itself **Wisp**.
 - Xcode command-line tools (`xcode-select --install`). Xcode itself is not needed.
 - A camera: the built-in one works. An iPhone as a Continuity Camera at eye level works best.
 
-## Build and run
+## Install
 
-```sh
-make app      # builds release and assembles + ad-hoc signs GesturePointer.app
-make run      # builds the app and opens it
+The repository is private, so installing goes through gh (GitHub's command line tool), signed
+in. The installer sets gh up if it's missing (it needs [Homebrew](https://brew.sh) for that).
+Paste this in Terminal:
+
+```bash
+gh api -H "Accept: application/vnd.github.raw" repos/ainigh/MyTouchScreen/contents/install.sh | bash
 ```
 
-Other targets: `make doctor` (health report), `make install` (copy to /Applications),
-`make test` (core test suite), `make check` (static checks), `make clean`.
+It downloads the latest release into `~/Applications/GesturePointer.app` and opens it. If there's
+no release yet (GitHub Actions hasn't built one), it builds from the source instead. That needs
+Apple's command line tools (`xcode-select --install`) with Swift 5.9 or newer; if those are older
+but an Xcode 15 or newer is installed, it uses that Xcode.
+
+To install a branch that isn't merged yet, build it here and follow that branch for updates:
+
+```bash
+gh api -H "Accept: application/vnd.github.raw" "repos/ainigh/MyTouchScreen/contents/install.sh?ref=BRANCH" | WISP_BRANCH=BRANCH bash
+```
+
+If the new copy quits as soon as it opens, the installer puts the one you had back and says where
+the crash report is. Running the install line again is always safe: it reinstalls.
+
+## Updates
+
+Wisp follows `main` (or the branch it was installed from). It checks at launch, every 6 hours,
+and when you choose **Check for Updates…** in the menu-bar menu. The menu always shows the
+version and commit you're on. When the branch has a commit this copy wasn't built from, a toast
+says so and the menu offers:
+
+- **Update to v1.0.N**: GitHub already built that commit. Wisp downloads it, swaps itself and
+  reopens.
+- **Update (build here)**: GitHub hasn't built it (the build is still running, or Actions is off
+  for the repository). Wisp downloads that commit's source, builds it for this Mac, swaps itself
+  and reopens. This takes a minute or two; the build output goes to
+  `~/Library/Logs/Wisp/update.log`.
+
+If an update fails, **Copy Update Details** copies the error and the end of the log, ready to
+paste to Claude Code.
+
+GitHub Actions (`.github/workflows/build.yml`) tests and builds every push, and publishes a
+release (`v1.0.<run number>`, with `GesturePointer.zip`) for every push to `main`.
+
+**Permissions after an update.** The app is ad-hoc signed, so macOS treats each new build as a
+new app and may ask for Camera and Accessibility again; Wisp's Setup window comes up when it
+needs them. If Accessibility is already switched on but Wisp still asks, remove GesturePointer
+from the list with **−** and turn it on again. To keep permissions across updates, sign with your
+own certificate: create a "Code Signing" certificate in Keychain Access (Certificate Assistant →
+Create a Certificate…, type *Code Signing*), then run
+`defaults write app.wisp.GesturePointer signIdentity "THE CERTIFICATE NAME"` once. Updates built
+on your Mac are then signed with it.
+
+## Build it yourself
+
+```sh
+make app      # builds release into build/GesturePointer.app (and build/GesturePointer.zip)
+make install  # copies it into ~/Applications and opens it
+make run      # builds and opens it from build/
+```
+
+Other targets: `make doctor` (health report), `make test` (core test suite), `make check`
+(static checks), `make clean`. A copy you build yourself still checks for updates and follows
+`main`.
 
 ## First run: permissions
 
@@ -35,9 +90,9 @@ Wisp needs two permissions and asks for them in order in its Setup window:
    Settings* and turn on **GesturePointer**.
 
    Grant it to **GesturePointer.app itself**, not to Terminal. macOS gives permissions to the
-   app bundle, which is why `make app` exists. If you rebuild, macOS may treat the new build as
-   a different app: if clicks stop working, turn the switch off and on again (or remove the
-   entry with `−` and re-add the app).
+   app bundle. After an update or a rebuild, macOS may treat the new build as a different app:
+   if clicks stop working, remove the entry with `−` and turn it on again when Wisp asks (see
+   Updates).
 
 Then pick a camera and either **Calibrate** (20 seconds: point at each corner as it lights up,
 then pinch three times) or **Skip** to use a sensible default area. You can calibrate any
@@ -134,7 +189,8 @@ Menu bar → *Settings…*
 
 ## Troubleshooting
 
-Run `make doctor` first. It prints permissions, cameras, displays and measures the camera's
+Run `~/Applications/GesturePointer.app/Contents/MacOS/GesturePointer --doctor` (or `make doctor`
+in a checkout) first. It prints permissions, cameras, displays and measures the camera's
 frame rate and Vision's speed for 5 seconds, and lists anything wrong.
 
 | Problem | Fix |
@@ -146,10 +202,11 @@ frame rate and Vision's speed for 5 seconds, and lists anything wrong.
 | Clicks fire by themselves / are missed | Re-run *Calibrate This Display…* (it learns your pinch), or adjust *Pinch closes at*. |
 | Can't reach screen corners | Calibrate, or lower *Active area*. |
 | Shortcut does nothing | Another app owns it; pick another in Settings → General. |
+| An update failed | Menu → **Copy Update Details**, paste it to Claude Code. Or rerun the install line. |
 | Need help tuning | Record a session (see `tools/tune.md`) and send the file. |
 
 Command-line flags (run the binary inside the bundle,
-`GesturePointer.app/Contents/MacOS/GesturePointer`):
+`~/Applications/GesturePointer.app/Contents/MacOS/GesturePointer`):
 
 ```
 --record <file.json>   record the hand-landmark stream while running
@@ -165,7 +222,8 @@ This app was written on Linux, where Apple's frameworks can't be compiled; the g
 (`GestureCore`) is fully tested there, and the macOS layer is compiled by the repository's CI on
 macOS. If `make app` fails on your Mac anyway:
 
-1. Run `make app 2>&1 | tee build.log`.
+1. Run `make app 2>&1 | tee build.log` (for the installer: rerun the install line and copy all
+   of its output; for an in-app update: menu → **Copy Update Details**).
 2. Paste the **entire** output (or attach `build.log`) to Claude Code with the words
    **"fix this build error"**. Include the first error, not only the last lines — the first
    error is usually the real one.
@@ -179,7 +237,8 @@ Sources/GestureCore/        Foundation-only gesture engine (filters, calibration
 Sources/GesturePointerApp/  macOS shell: camera, Vision, CGEvent input, overlay, menu, settings
 Sources/GestureReplay/      gesture-replay: run a recording through the engine on any OS
 Tests/GestureCoreTests/     `swift test`
-scripts/make-app.sh         bundle + ad-hoc codesign
+install.sh                  one-line install (release, or build from source), with rollback
+scripts/make-app.sh         bundle + sign + zip (CI, the installer and the updater all use it)
 tools/check.sh, tools/tune.md
 ```
 

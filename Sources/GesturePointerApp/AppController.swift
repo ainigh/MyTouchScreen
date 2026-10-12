@@ -24,6 +24,9 @@ final class AppController: MenuBarActions {
     private let sounds = Sounds()
     private let hotkey = GlobalHotkey()
     private let permissionMonitor = PermissionMonitor()
+    private let updater = Updater()
+    private var userCheckedForUpdates = false
+    private var announcedUpdate: UpdatePlan?
 
     private var overlay: OverlayController?
     private var menuBar: MenuBarController?
@@ -92,6 +95,8 @@ final class AppController: MenuBarActions {
 
         applySettings()
 
+        updater.onChange = { [weak self] state in self?.updaterChanged(state) }
+
         if let path = options.replayPath {
             startReplay(path)
             return
@@ -103,6 +108,32 @@ final class AppController: MenuBarActions {
             showWelcome()
         }
         updateCameraMode()
+        updater.start()
+    }
+
+    private func updaterChanged(_ state: Updater.State) {
+        switch state {
+        case .available(let plan):
+            if announcedUpdate != plan || userCheckedForUpdates {
+                announcedUpdate = plan
+                overlay?.toast("Update available — see the menu", symbol: "arrow.down.circle")
+            }
+            userCheckedForUpdates = false
+        case .upToDate:
+            if userCheckedForUpdates {
+                overlay?.toast("Wisp is up to date", symbol: "checkmark.circle.fill")
+            }
+            userCheckedForUpdates = false
+        case .failed(let message):
+            if userCheckedForUpdates {
+                overlay?.toast(message, symbol: "exclamationmark.triangle.fill", tint: Theme.warning)
+            }
+            userCheckedForUpdates = false
+        case .installing(let step):
+            overlay?.toast(step, symbol: "arrow.down.circle")
+        case .idle, .checking:
+            break
+        }
     }
 
     func shutdown() {
@@ -407,6 +438,26 @@ final class AppController: MenuBarActions {
     var showsPreview: Bool { settings.showPreview }
     var launchesAtLogin: Bool { LaunchAtLogin.isEnabled }
     var hotkeyDisplay: String { settings.hotkey.displayString }
+    var versionLine: String { updater.versionLine }
+    var updateState: Updater.State { updater.state }
+
+    func checkForUpdates() {
+        userCheckedForUpdates = true
+        updater.check(userInitiated: true)
+    }
+
+    func installUpdate() {
+        // Never restart in the middle of a drag or with a modifier held.
+        if engaged { pipeline.setEngaged(false, reason: .menu) }
+        updater.install()
+    }
+
+    func copyUpdateError() {
+        guard case .failed(let message) = updater.state else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(Updater.report(message), forType: .string)
+        overlay?.toast("Copied — paste it to Claude Code", symbol: "doc.on.clipboard")
+    }
 
     func toggleEnabled() {
         settings.enabled.toggle()

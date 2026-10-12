@@ -3,11 +3,11 @@
 #   make app      assemble + ad-hoc sign GesturePointer.app
 #   make run      build the app and open it
 #   make doctor   print permissions, cameras, displays, measured fps
-#   make install  copy the app to /Applications
+#   make install  install into ~/Applications (same place install.sh uses) and open it
 #   make test     run the GestureCore test suite
 #   make check    static checks (unfinished markers, imports, Info.plist)
 
-APP := GesturePointer.app
+APP := build/GesturePointer.app
 BIN := $(APP)/Contents/MacOS/GesturePointer
 
 .PHONY: build app run doctor install test check clean replay-demo
@@ -25,9 +25,12 @@ doctor: app
 	$(BIN) --doctor
 
 install: app
-	rm -rf /Applications/$(APP)
-	cp -R $(APP) /Applications/
-	@echo "Installed to /Applications/$(APP). Grant Camera and Accessibility to that copy."
+	pkill -x GesturePointer 2>/dev/null; sleep 1; true
+	mkdir -p $(HOME)/Applications
+	rm -rf $(HOME)/Applications/GesturePointer.app
+	ditto $(APP) $(HOME)/Applications/GesturePointer.app
+	open $(HOME)/Applications/GesturePointer.app
+	@echo "Installed to ~/Applications/GesturePointer.app. Grant Camera and Accessibility to that copy."
 
 test:
 	swift test
@@ -41,4 +44,4 @@ replay-demo: app
 	$(BIN) --replay /tmp/wisp-demo.json --dry-run
 
 clean:
-	rm -rf .build $(APP)
+	rm -rf .build build
