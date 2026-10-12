@@ -105,7 +105,7 @@ struct WelcomeView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Welcome to Wisp")
                         .font(.system(size: 22, weight: .semibold, design: .rounded))
-                    Text("Point at the screen. Tap the air to click. No touching.")
+                    Text("Point at the screen. Hold still to click. Wiggle to scroll.")
                         .foregroundStyle(.secondary)
                 }
             }

@@ -40,7 +40,7 @@ final class TuningTests: XCTestCase {
 
     func testSyntheticSessionScoresWell() {
         let session = VelocitySynthetic.session(repetitions: 4, fps: 30, seed: 9)
-        let score = Evaluation.score(Evaluation.evaluate(session, config: GestureConfig()))
+        let score = Evaluation.score(Evaluation.evaluate(session, config: .velocityMode))
         XCTAssertEqual(score.total, GestureLabel.scripted.count * 4)
         XCTAssertGreaterThanOrEqual(score.f1, 0.9)
     }
@@ -54,7 +54,7 @@ final class TuningTests: XCTestCase {
         for file in sessions {
             let recording = try Recording.load(from: file)
             guard recording.segments?.isEmpty == false else { continue }
-            let score = Evaluation.score(Evaluation.evaluate(recording, config: GestureConfig()))
+            let score = Evaluation.score(Evaluation.evaluate(recording, config: .velocityMode))
             XCTAssertGreaterThanOrEqual(score.f1, 0.9, "\(file.lastPathComponent): F1 \(score.f1)")
         }
     }

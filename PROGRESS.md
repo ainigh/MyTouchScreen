@@ -71,6 +71,13 @@ Resume from the first unchecked item. Tick only after verification per `CLAUDE.m
 - [x] Linux `swift build` + `swift test` green; `tools/check.sh` green; Mac files reviewed
 - [x] Committed: `M7: velocity gestures`
 
+## Hold & wiggle default (owner request)
+- [x] `ShakeDetector` + `ShakeParams`, `dwellShake` input model as default (dwell 2 s = click, 3 direction changes in 1 s = scroll mode, palm on/off)
+- [x] Tests: 2 s hold clicks once, engaging never clicks, ordinary moves never click/scroll, wiggle scrolls on its axis, 2 changes / slow / tiny wiggles don't, mode switch ends scroll
+- [x] Settings (third model + Hold & wiggle section), menu hint, welcome text, README, DECISIONS
+- [x] Linux build + 118 tests green; check.sh green; Mac files reviewed (not compiled)
+- [x] Committed
+
 ## Owner handoff (for the human, after Claude is done)
 1. `xcode-select --install` if not already done.
 2. `make app && make run`.

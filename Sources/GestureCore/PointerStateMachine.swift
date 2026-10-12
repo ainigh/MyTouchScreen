@@ -103,7 +103,7 @@ public final class PointerStateMachine {
     private var mapperDisplayID: String?
     var router: DisplayRouter
     var smoother: PointerSmoother
-    private var scrollFilter: OneEuroFilter2D
+    var scrollFilter: OneEuroFilter2D
     var momentum: ScrollMomentum
 
     // Hand slots: the pointing hand and an optional second hand (for zoom).
@@ -139,10 +139,10 @@ public final class PointerStateMachine {
     var lastClick: (time: Double, point: Point2, count: Int)?
 
     // Scroll
-    private var scrollLastPalm: Point2?
-    private var scrollLastTime: Double = 0
+    var scrollLastPalm: Point2?
+    var scrollLastTime: Double = 0
     private var scrollVelocity = Point2.zero
-    private var scrollRemainder = Point2.zero
+    var scrollRemainder = Point2.zero
 
     // Zoom
     private var zoomLastDistance: Double?
@@ -154,12 +154,12 @@ public final class PointerStateMachine {
     // Engagement by palm
     private var palmHoldStart: Double?
     private var palmLatched = false
-    private var palmSpeed: Double = 0
+    var palmSpeed: Double = 0
     private var palmSpeedLast: (time: Double, point: Point2)?
 
     // Dwell click
-    private var dwellAnchor: (time: Double, point: Point2)?
-    private var dwellLatched = false
+    var dwellAnchor: (time: Double, point: Point2)?
+    var dwellLatched = false
 
     // Velocity mode (see PointerStateMachine+Velocity.swift).
     var velocityEngine: VelocityEngine
@@ -168,6 +168,11 @@ public final class PointerStateMachine {
     var warpOffset = Point2.zero
     var lastRawBox: Point2?
     var trailAnchorTime: Double?
+
+    // Hold & wiggle (see PointerStateMachine+Shake.swift).
+    var shakeDetector: ShakeDetector
+    var shakeScrollVertical = true
+    var shakeStillSince: Double?
 
     // Real mouse takes priority.
     var outputSuppressedUntil: Double = -.infinity
@@ -188,6 +193,7 @@ public final class PointerStateMachine {
         self.scrollFilter = OneEuroFilter2D(config.filter)
         self.momentum = ScrollMomentum(friction: Self.momentumFriction(config), minSpeed: config.momentumMinSpeed)
         self.velocityEngine = VelocityEngine(params: config.velocity)
+        self.shakeDetector = ShakeDetector(params: config.shake)
         self.primary = GestureDetector(config: Self.detectorConfig(config, calibration.profile(for: displayID)))
         self.secondary = GestureDetector(config: Self.detectorConfig(config, calibration.profile(for: displayID)))
         snapshot.displayID = displayID
@@ -274,6 +280,7 @@ public final class PointerStateMachine {
             lastEmittedCursor = nil
             history.removeAll()
             resetVelocity()
+            dwellAnchor = nil
             lastHandSeen = time
             hadHandRecently = false
             out.events.append(.engaged)
@@ -302,7 +309,7 @@ public final class PointerStateMachine {
         if isEngaged && !wasSuppressed {
             out.events.append(.externalMouseTookOver)
         }
-        if state == .dragging && config.inputModel == .velocity {
+        if state == .dragging && config.inputModel != .pose {
             // Same rule as below, but Velocity mode has no pinch to wait out: back to hover.
             if buttonDown {
                 buttonDown = false
@@ -388,10 +395,10 @@ public final class PointerStateMachine {
             lastHandSeen = time
             hadHandRecently = true
             if state == .engaged { state = .hover }
-            if config.inputModel == .velocity {
-                out.append(updatePointerVelocity(hand, secondary: secondaryHand, at: time))
-            } else {
-                out.append(updatePointer(hand, secondary: secondaryHand, at: time))
+            switch config.inputModel {
+            case .dwellShake: out.append(updatePointerShake(hand, at: time))
+            case .velocity: out.append(updatePointerVelocity(hand, secondary: secondaryHand, at: time))
+            case .pose: out.append(updatePointer(hand, secondary: secondaryHand, at: time))
             }
         } else {
             out.append(handleMissingHand(at: time))
@@ -917,17 +924,18 @@ public final class PointerStateMachine {
     // MARK: Dwell click
 
     func updateDwell(_ p: Point2, at time: Double, suppressed: Bool) -> StepOutput {
-        guard config.dwellClickEnabled, !suppressed else {
+        let dwell = dwellSettings
+        guard dwell.enabled, !suppressed else {
             dwellAnchor = nil
             return StepOutput()
         }
-        let radius = (router.current?.frame.width ?? 1500) * config.dwellRadiusBox
+        let radius = (router.current?.frame.width ?? 1500) * dwell.radiusBox
         guard let anchor = dwellAnchor, anchor.point.distance(to: p) <= radius else {
             dwellAnchor = (time, p)
             dwellLatched = false
             return StepOutput()
         }
-        if !dwellLatched && time - anchor.time >= config.dwellClickDelay {
+        if !dwellLatched && time - anchor.time >= dwell.delay {
             dwellLatched = true
             return StepOutput(intents: [.click(x: anchor.point.x, y: anchor.point.y, count: 1)],
                               events: [.dwellClicked])
@@ -935,10 +943,19 @@ public final class PointerStateMachine {
         return StepOutput()
     }
 
+    /// Hold & wiggle clicks by dwelling, always; the other models only when dwell click is on.
+    var dwellSettings: (enabled: Bool, delay: Double, radiusBox: Double) {
+        if config.inputModel == .dwellShake {
+            return (true, config.shake.dwellTime, config.shake.dwellRadiusBox)
+        }
+        return (config.dwellClickEnabled, config.dwellClickDelay, config.dwellRadiusBox)
+    }
+
     private func dwellProgress(at time: Double) -> Double {
-        guard config.dwellClickEnabled, state == .hover, !dwellLatched, let anchor = dwellAnchor else { return 0 }
+        let dwell = dwellSettings
+        guard dwell.enabled, state == .hover, !dwellLatched, let anchor = dwellAnchor else { return 0 }
         // Show nothing for the first quarter so ordinary pauses do not flash the ring.
-        let t = (time - anchor.time) / max(config.dwellClickDelay, 1e-6)
+        let t = (time - anchor.time) / max(dwell.delay, 1e-6)
         return t < 0.25 ? 0 : clamp01((t - 0.25) / 0.75)
     }
 

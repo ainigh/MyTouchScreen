@@ -4,7 +4,7 @@ import XCTest
 /// SPEC-M7 acceptance tests against the synthetic generator (until the owner's recordings
 /// replace it): every class ≥ 95% over 200 samples, rest/jitter/reposition stay silent.
 final class VelocityAccuracyTests: XCTestCase {
-    private let config = GestureConfig()   // Velocity mode is the default
+    private let config = GestureConfig.velocityMode
 
     private func outcomes(_ label: GestureLabel, count: Int = 200) -> [GestureOutcome] {
         (0..<count).map { i in

@@ -1,10 +1,11 @@
-# Wisp — point at your Mac, tap the air to click
+# Wisp — point at your Mac, hold still to click
 
 Wisp is a menu-bar app that turns your Mac's camera into a touch-free pointing device.
-Point your index finger at the screen and a soft halo follows it. Your hand is the mouse: a
-quick tap of the whole hand clicks, a long flick scrolls, tap-then-move drags, both hands
-spreading zoom. (Prefer pinches? *Pose mode* — pinch to click, fist to scroll — is one switch
-away in Settings.) It generates real system input, so it works in every app.
+Point your index finger at the screen and a soft halo follows it. By default (*Hold & wiggle*)
+every movement moves the cursor, holding still for 2 seconds clicks, and wiggling your hand back
+and forth starts scrolling. Two other input models are one switch away in Settings: *Velocity*
+(tap the air to click, flick to scroll) and *Pose* (pinch to click, fist to scroll). It
+generates real system input, so it works in every app.
 
 Everything runs on the Mac: Apple's Vision framework finds 21 points on your hand, and no
 video is stored or sent anywhere.
@@ -112,7 +113,20 @@ Standby note: while disengaged with "Open palm toggles Wisp" enabled, the camera
 green light too) and Wisp looks at a few frames per second for your palm, using almost no CPU.
 Turn that setting off to stop the camera whenever Wisp is disengaged and use the shortcut.
 
-## Gesture cheat sheet — Velocity mode (default)
+## Gesture cheat sheet — Hold & wiggle (default)
+
+| Gesture | Action |
+|---|---|
+| Point and move | Cursor follows the fingertip — any movement is just movement |
+| Move to a target, then hold still for 2 s | Left click, once (a ring fills while you hold; move away and settle again for the next click) |
+| Wiggle back and forth along one axis — 3 changes of direction within 1 s | Scroll mode: the cursor returns to where the wiggle started, then moving your hand up/down (or sideways, for a sideways wiggle) scrolls |
+| Hold still for ½ s while scrolling | Stop scrolling, back to pointing |
+| Open palm held still | Engage / disengage |
+
+Engaging never clicks by itself: the cursor has to move and settle first. Right click, drag and
+zoom aren't part of this model; switch to Velocity or Pose in Settings → Gestures for those.
+
+## Gesture cheat sheet — Velocity mode
 
 No finger pose needed: Wisp watches how fast and how far your whole hand moves. Tiny or slow
 movements just move the cursor; only short, quick taps and long, fast flicks do something.
@@ -210,7 +224,9 @@ Menu bar → *Settings…*
 - **Pointer:** *Active area* (how much hand movement covers the screen), *Steadiness* and
   *Responsiveness* (the 1€ filter's min cutoff and beta), *Rest lock* (how firmly a still cursor
   holds), *Precision* (slow movements are scaled down for fine targeting).
-- **Gestures:** *Input model* (Velocity / Pose). Velocity: which tap direction is the left
+- **Gestures:** *Input model* (Hold & wiggle / Velocity / Pose). Hold & wiggle: hold time,
+  how still is still, how many changes of direction within how long make a wiggle, the
+  smallest stroke that counts, when scrolling stops, scroll speed and direction. Velocity: which tap direction is the left
   click, right click and drag on/off, scroll gain and momentum, scroll direction (follows the
   system by default), the "why not?" readout, and an *Advanced* section with every Velocity
   threshold plus *Reset to tuned defaults*. Pose: pinch thresholds, hold-to-drag time, scroll speed and direction, momentum,

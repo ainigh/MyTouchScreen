@@ -537,7 +537,11 @@ final class AppController: MenuBarActions {
     }
     var hotkeyDisplay: String { settings.hotkey.displayString }
     var engagedHint: String {
-        settings.config.inputModel == .velocity ? "point, tap the air to click, flick to scroll" : "point, pinch to click"
+        switch settings.config.inputModel {
+        case .dwellShake: return "point, hold still 2 s to click, wiggle to scroll"
+        case .velocity: return "point, tap the air to click, flick to scroll"
+        case .pose: return "point, pinch to click"
+        }
     }
     var versionLine: String { updater.versionLine }
     var updateState: Updater.State { updater.state }
