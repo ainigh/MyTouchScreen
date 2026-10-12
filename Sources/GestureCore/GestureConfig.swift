@@ -9,22 +9,17 @@ public struct GestureConfig: Equatable, Codable {
     /// Lock, wiggle click, fist drag and two-fist thresholds.
     public var shake = ShakeParams()
 
-    // Pointer filtering
-    public var filter = OneEuroParameters(minCutoff: 0.6, beta: 6.0, derivativeCutoff: 1.0)
+    // Pointer filtering. The cursor is a laser pointer: it goes exactly where the fingertip
+    // points (through the calibration), at every speed. These only decide how much tracker
+    // jitter is smoothed away; `steadiness` sets all of them from one slider.
+    public var filter = OneEuroParameters(minCutoff: 0.6, beta: 14.0, derivativeCutoff: 1.0)
     /// Dead zone while moving: the cursor trails the filtered point by at most this much, which
     /// at any real speed is a fraction of one frame of motion.
-    public var deadZoneBox = 0.0015
+    public var deadZoneBox = 0.001
     /// Dead zone once the cursor has rested for `restLockDelay`: residual jitter of a still hand
-    /// stays below this, which is what makes the cursor *rock steady* (≈9 pt on a laptop screen).
+    /// stays below this, which is what makes the cursor *rock steady*.
     public var restDeadZoneBox = 0.005
-    public var restLockDelay = 0.25
-    /// Precision mode: below `precisionSpeedBox` the cursor moves at `precisionGain` of the
-    /// hand's speed. The accumulated offset drains away when the hand moves fast again, so the
-    /// absolute mapping is restored.
-    public var precisionEnabled = true
-    public var precisionSpeedBox = 0.12
-    public var precisionGain = 0.45
-    public var precisionMaxOffsetBox = 0.06
+    public var restLockDelay = 0.2
     /// Sensitivity: scale of the active box (smaller = less hand motion per screen).
     public var boxScale = 1.0
     public var edgeOvershoot = 0.04
@@ -41,7 +36,8 @@ public struct GestureConfig: Equatable, Codable {
     public var palmEngageDuration = 0.6
     public var palmDisengageDuration = 0.8
     public var palmStillnessNormalized = 0.6   // max palm speed in hand sizes per second
-    public var handLostTimeout = 2.0
+    /// A hand missing for longer than this ends a drag (so the button never sticks). Wisp stays
+    /// engaged however long the hand is gone: only the palms, the hotkey or the menu turn it off.
     public var handDropoutGrace = 0.15
 
     // Scroll (two fists)
@@ -66,6 +62,35 @@ public struct GestureConfig: Equatable, Codable {
 }
 
 extension GestureConfig {
+    /// One knob for all the pointer smoothing, 0 (snappy: least lag, a little jitter) … 1 (steady:
+    /// no jitter, a little lag on slow moves). 0.5 is the default tuning. Reading it back gives the
+    /// position the current filter corresponds to.
+    ///
+    /// Tuned on the owner's recording and on a still hand with 0.003 box (≈5 pt) of tracker noise
+    /// per frame: at 0.5 the resting cursor moves about 6 pt in 5 s, and a moving cursor is a
+    /// median 17 pt behind the hand.
+    public var steadiness: Double {
+        get { clamp01(log(filter.minCutoff / Self.snappyMinCutoff) / log(Self.steadyMinCutoff / Self.snappyMinCutoff)) }
+        set {
+            let s = clamp01(newValue.isFinite ? newValue : 0.5)
+            filter.minCutoff = Self.snappyMinCutoff * pow(Self.steadyMinCutoff / Self.snappyMinCutoff, s)
+            filter.beta = 20 - 12 * s
+            restDeadZoneBox = 0.003 + 0.004 * s
+        }
+    }
+
+    static let snappyMinCutoff = 1.2
+    static let steadyMinCutoff = 0.3
+
+    /// The pointer smoothing back at its defaults (reach and gestures untouched).
+    public mutating func resetPointerTuning() {
+        let defaults = GestureConfig()
+        filter = defaults.filter
+        deadZoneBox = defaults.deadZoneBox
+        restDeadZoneBox = defaults.restDeadZoneBox
+        restLockDelay = defaults.restLockDelay
+    }
+
     /// Decode settings JSON written by any version: keys missing from `data` keep their default
     /// values and unknown keys are ignored. Synthesized `Codable` would reject a file exported
     /// before a setting existed, which would make "import settings" brittle across updates.

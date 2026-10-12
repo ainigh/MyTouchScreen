@@ -6,7 +6,7 @@ public enum PointerState: String, Codable, Equatable {
     case idle
     /// Engaged but no hand is visible.
     case engaged
-    /// The cursor follows the finger (or is frozen while the hand moves fast).
+    /// The cursor follows the finger like a laser pointer (or holds briefly after a click).
     case hover
     /// A fist pressed the button and the cursor follows it.
     case dragging
@@ -21,8 +21,12 @@ public struct PointerSnapshot: Equatable {
     public var displayID: String?
     /// 0...1 while both open palms are held to toggle engagement.
     public var engageProgress: Double = 0
-    /// The hand is moving fast, so the cursor holds still (a wiggle here clicks right there).
-    public var isFrozen = false
+    /// The cursor is held on a point (after a click, a drop or while a fist forms) until the
+    /// hand settles.
+    public var isHeld = false
+    /// Engaged, but no hand seen for a while: the app can drop the camera to a low frame rate
+    /// until one comes back. Wisp stays engaged.
+    public var handAway = false
     /// 0...1 while the hand is held at a screen edge toward another display.
     public var displayJumpProgress: Double = 0
     public var hands: [HandFrame] = []
@@ -54,8 +58,8 @@ public struct StepOutput: Equatable {
 /// for the gestures).
 ///
 /// ```
-/// idle ──both palms / hotkey──▶ engaged ──hand seen──▶ hover ──fast motion──▶ frozen ──calm──▶ hover
-///                                                        │  └─ wiggle (any time) ──▶ click
+/// idle ──both palms / hotkey──▶ engaged ──hand seen──▶ hover (cursor = where the finger points)
+///                                                        │  └─ wiggle ──▶ click (held until the hand settles)
 ///                                                        └─ fist ──▶ dragging ──open──▶ drop
 /// ```
 ///
@@ -88,7 +92,7 @@ public final class PointerStateMachine {
     var lastEmittedCursor: Point2?
     var lastBox: Point2?
     /// Box-space offset added to the tracked point so the cursor starts a drag exactly where
-    /// the button went down (the palm sits below the fingertip) or carries on after a freeze.
+    /// the button went down (the palm sits below the fingertip). Zero except while dragging.
     var warpOffset = Point2.zero
     var lastRawBox: Point2?
     /// True only between an emitted `.down` and its `.up`, so a drag that began while output was
@@ -113,8 +117,8 @@ public final class PointerStateMachine {
     var freeze: CursorFreeze?
     /// Recent shown cursor positions, to click where a wiggle began.
     var cursorHistory: [(time: Double, point: Point2)] = []
-    /// The latest cursor position while the hand moved calmly: where a freeze holds it.
-    var lastCalmCursor: (time: Double, point: Point2)?
+    /// After a hold, the box-space offset that glides the cursor back under the fingertip.
+    var glide: (offset: Point2, start: Double)?
     /// A fist must be made with the hand seen open first: one held while engaging, or after the
     /// real mouse interrupted a drag, never presses by itself.
     var fistNeedsOpenHand = true
@@ -239,10 +243,10 @@ public final class PointerStateMachine {
         if isEngaged && !wasSuppressed {
             out.events.append(.externalMouseTookOver)
         }
-        // A frozen hand cursor is stale once the real mouse has moved; start over from the hand.
+        // A held hand cursor is stale once the real mouse has moved; start over from the hand.
         freeze = nil
         cursorHistory.removeAll()
-        lastCalmCursor = nil
+        glide = nil
         fistNeedsOpenHand = true
         if state == .dragging {
             // Our synthetic button is still down, so the real mouse would drag whatever the fist
@@ -392,13 +396,13 @@ public final class PointerStateMachine {
             smoother.reset()
             state = .engaged
         }
-        if missingFor > config.handLostTimeout {
-            out.append(setEngaged(false, reason: .handLost, at: time))
-        }
         return out
     }
 
-    /// Ends a drag cleanly so the button is never left held down, and forgets any freeze.
+    /// No hand for this long while engaged: `snapshot.handAway`.
+    static let handAwayAfter = 2.0
+
+    /// Ends a drag cleanly so the button is never left held down, and forgets any hold.
     private func cancelActiveGestures() -> StepOutput {
         var out = StepOutput()
         if buttonDown, let point = lastEmittedCursor ?? cursor {
@@ -415,7 +419,7 @@ public final class PointerStateMachine {
         shakeDetector.reset()
         freeze = nil
         cursorHistory.removeAll()
-        lastCalmCursor = nil
+        glide = nil
         fistNeedsOpenHand = true
         pendingFist = nil
         warpOffset = .zero
@@ -425,11 +429,6 @@ public final class PointerStateMachine {
     }
 
     // MARK: Cursor helpers
-
-    /// How far the hand must move (box widths) for a leftover offset to drain away completely:
-    /// the cursor re-converges on the absolute hand mapping gradually, hidden inside ordinary
-    /// movement, so the reach to every screen edge comes back.
-    static let warpDrainBox = 0.5
 
     /// Make the cursor continue from `point` with the hand where it is now.
     func reanchor(at point: Point2, time: Double) {
@@ -454,7 +453,8 @@ public final class PointerStateMachine {
         snapshot.cursor = isEngaged ? cursor : nil
         snapshot.displayID = router.current?.id
         snapshot.engageProgress = engageProgress(at: time)
-        snapshot.isFrozen = isEngaged && freeze != nil
+        snapshot.isHeld = isEngaged && freeze != nil
+        snapshot.handAway = isEngaged && time - lastHandSeen > Self.handAwayAfter
         snapshot.displayJumpProgress = router.jumpProgress(at: time)
         snapshot.pose = primary.state.pose
         snapshot.outputSuppressed = time < outputSuppressedUntil

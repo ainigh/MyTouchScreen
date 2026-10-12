@@ -14,7 +14,9 @@ import SwiftUI
 /// the main thread, so UI work can never add latency to the cursor.
 @MainActor
 final class AppController: MenuBarActions {
-    private enum CameraMode { case off, standby, full }
+    /// `away`: engaged, but no hand for a couple of seconds. Wisp stays engaged and tracks at a
+    /// lower rate until a hand shows up again (then `full` within a frame or two).
+    private enum CameraMode { case off, standby, away, full }
 
     private let options: LaunchOptions
     private let settings: AppSettings
@@ -237,7 +239,8 @@ final class AppController: MenuBarActions {
 
     private func desiredCameraMode() -> CameraMode {
         guard options.replayPath == nil, Permissions.cameraState == .granted else { return .off }
-        if calibration != nil || engaged { return .full }
+        if calibration != nil { return .full }
+        if engaged { return lastSnapshot.handAway ? .away : .full }
         guard settings.enabled else { return .off }
         // Standby watches for the engage palms (and feeds the preview) at a few fps.
         if settings.config.palmEngageEnabled || settings.showPreview { return .standby }
@@ -259,6 +262,9 @@ final class AppController: MenuBarActions {
         case .standby:
             camera.frameQueue.async { tracker.minimumInterval = 1.0 / 8.0 }
             camera.start()
+        case .away:
+            camera.frameQueue.async { tracker.minimumInterval = 1.0 / 15.0 }
+            camera.start()
         case .full:
             camera.frameQueue.async { tracker.minimumInterval = 0 }
             camera.start()
@@ -268,8 +274,10 @@ final class AppController: MenuBarActions {
     // MARK: Pipeline updates
 
     private func handleUpdate(_ snapshot: PointerSnapshot, _ events: [PointerEvent]) {
+        let handAwayChanged = snapshot.handAway != lastSnapshot.handAway
         lastSnapshot = snapshot
         for event in events { handle(event, snapshot: snapshot) }
+        if handAwayChanged { updateCameraMode() }
         overlay?.update(snapshot, status: menuStatus)
         preview?.update(hands: snapshot.hands, primaryIndex: snapshot.primaryHandIndex)
         updateStatus()
@@ -289,11 +297,10 @@ final class AppController: MenuBarActions {
             }
             installMouseMonitor()
             updateCameraMode()
-        case .disengaged(let reason):
+        case .disengaged:
             engaged = false
             sounds.play(.disengage)
-            let text = reason == .handLost ? "Hand lost — standing by" : "Standing by"
-            overlay?.toast(text, symbol: "hand.raised", tint: Theme.idle)
+            overlay?.toast("Standing by", symbol: "hand.raised", tint: Theme.idle)
             removeMouseMonitor()
             updateCameraMode()
         case .clicked(let count):
@@ -469,7 +476,7 @@ final class AppController: MenuBarActions {
         return launchAtLogin.isEnabled
     }
     var hotkeyDisplay: String { settings.hotkey.displayString }
-    var engagedHint: String { "point; wiggle to click; fist to drag; fast moves don't move the cursor" }
+    var engagedHint: String { "point like a laser pointer; wiggle to click; fist to drag" }
     var versionLine: String { updater.versionLine }
     var updateState: Updater.State { updater.state }
 

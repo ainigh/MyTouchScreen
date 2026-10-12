@@ -4,7 +4,7 @@ import GestureCore
 import QuartzCore
 
 /// One transparent, click-through window per screen, above everything, drawing the cursor halo,
-/// the freeze and engage rings, the click ripple, the display-jump edge glow, toasts and the
+/// the hold and engage rings, the click ripple, the display-jump edge glow, toasts and the
 /// standby glyph.
 ///
 /// All methods are main-thread only. Updates arrive at camera rate; layer changes that track
@@ -107,9 +107,9 @@ final class OverlayView: NSView {
                     ringProgress = snapshot.engageProgress
                     ringColor = Theme.idle
                 } else {
-                    // Full while the hand moves fast and the cursor holds still: a wiggle now
-                    // clicks right where it is.
-                    ringProgress = snapshot.isFrozen ? 1 : 0
+                    // Full while the cursor is held on a point (after a click, while a fist
+                    // forms, after a drop) until the hand settles.
+                    ringProgress = snapshot.isHeld ? 1 : 0
                     ringColor = Theme.accent
                 }
             } else {

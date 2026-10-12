@@ -2,16 +2,6 @@ import Foundation
 
 /// Wiggle-click tunables. Distances in hand sizes (wrist → middle MCP), times in seconds.
 public struct ShakeParams: Equatable, Codable {
-    /// The tracked point moving faster than this (hand sizes per second) freezes the cursor:
-    /// fast motion is a gesture (a wiggle, closing the hand), not pointing. A click wiggle's
-    /// strokes run at about 3–6 hand sizes/s; calm pointing in the owner's recording mostly
-    /// stays at 1–2.5.
-    public var freezeSpeed = 2.5
-    /// A frozen cursor follows the hand again once it has been slower than this…
-    public var resumeSpeed = 1.2
-    /// …for this long. It then carries on from where it froze (like lifting and putting down a
-    /// mouse), so a fast move never moves the cursor.
-    public var resumeTime = 0.15
     /// Direction changes along one axis that make the click wiggle (left-right-left)…
     public var reversals = 2
     /// …all within this window…
@@ -23,8 +13,9 @@ public struct ShakeParams: Equatable, Codable {
     public var minStroke = 0.25
     /// A second wiggle click within this long of the first, at the same spot, is a double click.
     public var doubleClickWindow = 1.5
-    /// "The same spot" for a double click: within this fraction of the screen width.
-    public var doubleClickRadiusBox = 0.025
+    /// "The same spot" for a double click: within this fraction of the screen width (the second
+    /// click then lands exactly on the first).
+    public var doubleClickRadiusBox = 0.05
     /// A fist presses (starts a drag) once held this long. The owner's recording has fists
     /// flickering for 0.1–0.2 s while the hand moves; a meant fist is held longer.
     public var fistHoldTime = 0.25
@@ -136,8 +127,10 @@ public struct ShakeDetector {
 
     public struct Detection: Equatable {
         public var vertical: Bool
-        /// When the wiggle's first stroke began.
+        /// When the wiggle's first stroke began…
         public var startTime: Double
+        /// …and when it turned back.
+        public var firstTurnTime: Double
     }
 
     /// Feed the tracked point (hand space; the app uses the index fingertip). Returns a
@@ -152,9 +145,9 @@ public struct ShakeDetector {
                               minStrokeTime: Self.minStrokeTime) {
                 tracker.changes.removeAll { time - $0.time > params.window }
                 if tracker.changes.count >= needed {
-                    let start = tracker.changes[tracker.changes.count - needed].strokeStart
+                    let first = tracker.changes[tracker.changes.count - needed]
                     reset()
-                    return Detection(vertical: vertical, startTime: start)
+                    return Detection(vertical: vertical, startTime: first.strokeStart, firstTurnTime: first.time)
                 }
             }
             if vertical { y = tracker } else { x = tracker }

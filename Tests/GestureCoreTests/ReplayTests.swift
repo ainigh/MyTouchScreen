@@ -75,12 +75,36 @@ final class ReplayTests: XCTestCase {
 final class ConfigTests: XCTestCase {
     func testLenientDecodeKeepsDefaultsForMissingKeys() throws {
         // Old settings files carry keys of retired models (inputModel, pinchEnter, velocity…).
-        let json = #"{"inputModel": "pose", "pinchEnter": 0.3, "scrollSpeed": 2.5, "shake": {"lockTime": 1.5, "freezeSpeed": 3.5}, "velocity": {"vEnter": 1}}"#
+        // Precision mode, the freeze and the hand-lost timeout are retired too.
+        let json = #"{"inputModel": "pose", "pinchEnter": 0.3, "scrollSpeed": 2.5, "precisionEnabled": true, "handLostTimeout": 2, "shake": {"lockTime": 1.5, "freezeSpeed": 3.5, "minStroke": 0.4}, "velocity": {"vEnter": 1}}"#
         let config = try GestureConfig.decodeLenient(Data(json.utf8))
         XCTAssertEqual(config.scrollSpeed, 2.5)
-        XCTAssertEqual(config.shake.freezeSpeed, 3.5)
-        XCTAssertEqual(config.shake.resumeTime, ShakeParams().resumeTime)
+        XCTAssertEqual(config.shake.minStroke, 0.4)
+        XCTAssertEqual(config.shake.window, ShakeParams().window)
         XCTAssertEqual(config.palmThumbClearance, GestureConfig.default.palmThumbClearance)
+    }
+
+    func testSteadinessIsOneKnobForTheSmoothing() {
+        var config = GestureConfig()
+        XCTAssertEqual(config.steadiness, 0.5, accuracy: 1e-9, "the defaults are the middle of the slider")
+        var middle = GestureConfig()
+        middle.steadiness = 0.5
+        XCTAssertEqual(middle.filter, config.filter)
+        XCTAssertEqual(middle.restDeadZoneBox, config.restDeadZoneBox, accuracy: 1e-12)
+        config.steadiness = 1
+        XCTAssertEqual(config.steadiness, 1, accuracy: 1e-9)
+        XCTAssertLessThan(config.filter.minCutoff, GestureConfig().filter.minCutoff)
+        XCTAssertGreaterThan(config.restDeadZoneBox, GestureConfig().restDeadZoneBox)
+        config.steadiness = 0
+        XCTAssertEqual(config.steadiness, 0, accuracy: 1e-9)
+        config.steadiness = .nan
+        XCTAssertEqual(config.steadiness, 0.5, accuracy: 1e-9)
+        // Reset brings back the defaults and leaves everything else alone.
+        config.steadiness = 0.9
+        config.boxScale = 0.7
+        config.resetPointerTuning()
+        XCTAssertEqual(config.filter, GestureConfig().filter)
+        XCTAssertEqual(config.boxScale, 0.7)
     }
 
     func testRoundTrip() throws {

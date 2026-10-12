@@ -121,6 +121,15 @@ Resume from the first unchecked item. Tick only after verification per `CLAUDE.m
 - [x] Tests (81) green on Linux incl. owner recording; full `swift build` and check.sh green; Mac changes (overlay ring, theme, settings, help text) reviewed, not compiled
 - [x] Committed
 
+## Laser pointer, simpler settings, stays engaged (owner request)
+- [x] Cursor is absolute, like a laser pointer: precision gain, fast-motion freeze and the carry-on offset removed; a click, press or drop holds the cursor until the hand settles (≤ 0.6 s) then glides back under the finger
+- [x] Rest lock rebuilt: locks when the filtered point stays within the rest radius of its average (it never locked on a jittery hand before), settles on that average, needs a confirmed move to unlock; 1€ retuned (min cutoff 0.6, beta 14) on the owner recording + synthetic noise
+- [x] Wiggle clicks at the last calm moment before the wag (an arrival and a wag in the same direction are one stroke); double click snaps onto the first click
+- [x] Never disengages on hand loss (tracks at 15 fps while the hand is away); a lone hand always points whatever Vision calls it
+- [x] Settings: Pointer tab = how it works + Steadiness (Snappy↔Steady) + hand movement + pointing hand; Gestures tab removed; palms toggle moved to General; old smoothing reset once (`pointerTuningVersion` 2)
+- [x] Tests (83) green on Linux incl. owner recording; full `swift build` and check.sh green; Mac changes (Settings view, migration, camera `away` mode, overlay ring, texts) reviewed, not compiled
+- [x] Committed
+
 ## Owner handoff (for the human, after Claude is done)
 1. `xcode-select --install` if not already done.
 2. `make app && make run`.

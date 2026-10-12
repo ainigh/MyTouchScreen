@@ -163,7 +163,7 @@ final class GesturePipeline {
 
     private func perform(_ out: StepOutput) {
         for intent in out.intents { synth.perform(intent) }
-        // Belt and braces: however disengagement happened (palm, hand lost), nothing stays held.
+        // Belt and braces: however disengagement happened (palm, hotkey, menu), nothing stays held.
         if out.events.contains(where: { if case .disengaged = $0 { return true } else { return false } }) {
             synth.releaseAll()
         }

@@ -1,11 +1,11 @@
 # Wisp — point at your Mac, wiggle to click
 
 Wisp is a menu-bar app that turns your Mac's camera into a touch-free pointing device.
-Point your right index finger at the screen and a soft halo follows it. Wiggle your finger to
-click where the cursor is — any time, no waiting — or make a fist to grab and drag (open it to
-drop). Moving your hand fast never moves the cursor, so the wiggle (or closing your hand)
-doesn't drag the pointer off its target. It generates real system input, so it works in every
-app.
+Point your right index finger at the screen and the cursor goes where it points — like an
+invisible laser pointer or a stick touching the screen: fast or slow, the cursor is always
+under your finger, and it holds still while your hand does. Wiggle your finger to click where
+you were pointing, or make a fist to grab and drag (open it to drop). It generates real system
+input, so it works in every app.
 
 Everything runs on the Mac: Apple's Vision framework finds 21 points on your hand, and no
 video is stored or sent anywhere.
@@ -108,8 +108,8 @@ time from the menu bar (*Calibrate This Display…*); each display keeps its own
 - **Engage:** hold up **both hands** as open palms, fingers spread, for about half a second
   (one palm alone does nothing). A ring fills and
   a chime plays. Or press **⌃⌥⌘G** (changeable in Settings).
-- **Disengage:** both palms again (held a little longer), the same shortcut, or just drop your
-  hand out of view for 2 seconds.
+- **Disengage:** both palms again (held a little longer) or the same shortcut. Taking your hand
+  out of view does *not* turn Wisp off: point again and the cursor follows straight away.
 - While engaged, touching the real mouse or trackpad always wins: Wisp pauses for a moment.
 - **Off** (menu bar → *Turn Wisp Off*) stops the camera completely.
 
@@ -122,17 +122,15 @@ Turn that setting off to stop the camera whenever Wisp is disengaged and use the
 Your **right hand** points. The other hand only joins in to turn Wisp on and off. Wisp tracks
 two things: your **index finger** and your **fist**.
 
-**Fast means "not pointing".** While your hand moves calmly the cursor follows your fingertip.
-The moment it moves fast — about as fast as a wiggle — the cursor stops where it was just
-before and holds still (the outer ring lights up). Once your hand calms down the cursor carries
-on from there, like lifting a mouse and putting it down. So a quick sweep doesn't move the
-cursor; move calmly to go somewhere.
+**A laser pointer.** The cursor goes where your fingertip points, at any speed, with nothing
+in between: no slow-down for slow movements, no freezing on fast ones, no drift. A still hand
+locks the cursor in place (tracker jitter never reaches the screen); the first real movement
+unlocks it and it catches up exactly with your finger.
 
 | Hands | What you do | Action |
 |---|---|---|
-| right | point and move calmly | Cursor follows the fingertip |
-| right | move fast | Cursor holds still |
-| right | **wiggle** (left-right-left, or up-down-up) | Left click where the cursor is. Wiggle again within 1.5 s for a double click |
+| right | point | Cursor goes where the fingertip points |
+| right | **wiggle** (left-right-left, or up-down-up) | Left click where you were pointing just before the wiggle; the cursor waits there a moment (outer ring lit), then returns under your finger. Wiggle again within 1.5 s for a double click |
 | right | make a **fist** and hold it a moment (¼ s) | Press where the cursor was before your hand closed, and drag: the cursor follows the fist |
 | right | **open** the fist | Drop where the cursor is |
 | both | **open palms**, held still | Engage / disengage |
@@ -141,15 +139,17 @@ Notes: engaging never clicks by itself, and resting never clicks — **only a wi
 pinches, single taps and hovering never click. A fist that flickers for a moment while you
 move doesn't start a drag. There's no right click, scroll or zoom. With two monitors the
 cursor stays on the monitor the mouse pointer was on when Wisp engaged (Settings → Pointer).
-Wiggling the index finger works as well as wiggling the whole hand.
-Left-handed? Settings → Gestures → *Pointing hand: Left* swaps the roles.
+Wiggling the index finger works as well as wiggling the whole hand. Wisp stays on while your
+hand is out of view (it just watches at a lower frame rate until the hand is back); only the
+palms, the shortcut or the menu turn it off.
+Left-handed? Settings → Pointer → *Pointing hand: Left* swaps the roles.
 
 ## The overlay
 
 - **Halo** around the cursor, colour-coded: teal = pointing, violet with a centre dot = fist
   drag.
 - **Outer ring** fills during the two-palm hold (engage/disengage); while pointing it shows
-  full whenever the cursor is holding still because your hand is moving fast.
+  full while the cursor waits on a click, press or drop point for your hand to settle.
 - **Ripple** where a wiggle clicked (a double ripple for a double click).
 - **Edge glow** while you hold the cursor against an edge to jump displays.
 - **Toasts** at the top of the screen for state changes ("Engaged", "Standing by", "Camera
@@ -163,13 +163,13 @@ Left-handed? Settings → Gestures → *Pointing hand: Left* swaps the roles.
 
 Menu bar → *Settings…*
 
-- **Pointer:** *Stay on the display the mouse is on when Wisp engages* (on by default; off =
-  edge jumps between displays), *Active area* (how much hand movement covers the screen), *Steadiness* and
-  *Responsiveness* (the 1€ filter's min cutoff and beta), *Rest lock* (how firmly a still cursor
-  holds), *Precision* (slow movements are scaled down for fine targeting).
-- **Gestures:** how fast is "fast" (the cursor freezes above it) and when it follows again,
-  the click wiggle (changes of direction, within how long, smallest stroke), the double-click
-  window, how long a fist is held before it presses, two-palm engage, which hand points.
+- **Pointer:** a short "how it works", then three things. *Steadiness* (Snappy ↔ Steady): move
+  it toward Steady if the cursor shivers while your hand is still, toward Snappy if it trails
+  behind your finger. *Hand movement to cover the screen* (Less ↔ More). *Pointing hand*. With
+  more than one display, *Stay on the display the mouse is on when Wisp turns on*.
+- **General:** the on/off shortcut and *Both open palms turn Wisp on and off*, sounds, status
+  dot, launch at login, export/import settings as JSON, reset to defaults. (The wiggle and fist
+  timings are still in the exported JSON for anyone who wants to fine-tune them.)
 - **Camera:** device (automatic prefers an iPhone), resolution (720p recommended), preview,
   skeleton, calibration.
 - **General:** shortcut, sounds, status dot, launch at login, export/import settings as JSON,
@@ -185,10 +185,11 @@ frame rate and Vision's speed for 5 seconds, and lists anything wrong.
 |---|---|
 | Halo moves but nothing clicks or moves | Accessibility isn't granted to *this build* of GesturePointer.app. Menu → *Setup & Permissions…* → *Open Accessibility Settings* (it clears the stale entry), then turn GesturePointer on. |
 | Menu-bar icon shows a warning triangle | A permission is missing: menu → *Setup & Permissions…* |
-| Cursor shimmers | Better light on your hand; Settings → Pointer → lower *Steadiness* or raise *Rest lock*. |
-| Cursor feels sluggish | Raise *Responsiveness*; check `make doctor` shows ≥ 30 fps. |
-| Wiggles don't click, or clicks happen by themselves | Settings → Gestures: raise or lower *Click wiggle: smallest stroke* / *changes of direction*. Better still, record a session (below) and send it. |
-| Can't reach screen corners | Calibrate, or lower *Active area*. |
+| Cursor shivers while your hand is still | Better light on your hand; Settings → Pointer → move *Steadiness* toward Steady. |
+| Cursor trails behind your finger | Settings → Pointer → move *Steadiness* toward Snappy; check `make doctor` shows ≥ 30 fps. |
+| Cursor isn't where you point | Calibrate (Settings → Camera → *Calibrate…*): point at each corner when asked. |
+| Wiggles don't click, or clicks happen by themselves | Record a session (below) and send it. (The wiggle thresholds are in the exported settings JSON under `shake`.) |
+| Can't reach screen corners | Calibrate, or move *Hand movement to cover the screen* toward Less. |
 | Shortcut does nothing | Another app owns it; pick another in Settings → General. |
 | An update failed | Menu → **Copy Update Details**, paste it to Claude Code. Or rerun the install line. |
 | Need help tuning | Record a minute of use (`--record session.json`) and send the file: `gesture-replay` replays it on any computer. |
