@@ -4,7 +4,7 @@ import XCTest
 /// Behaviour of Velocity mode beyond raw accuracy: where clicks land, scroll momentum,
 /// composite gestures, noise rejection, frame-rate independence, settings.
 final class VelocityGestureTests: XCTestCase {
-    private let config = GestureConfig()
+    private let config = GestureConfig.velocityMode
 
     /// A pointing hand at a fixed spot plus a sum of strokes (hand space), sampled cleanly.
     private func stream(fps: Double, duration: Double, size: Double = 0.12, confidence: ((Int) -> Double)? = nil,
@@ -306,8 +306,8 @@ final class VelocityGestureTests: XCTestCase {
 
     // MARK: Settings and modes
 
-    func testVelocityIsTheDefaultAndPoseIsSelectable() {
-        XCTAssertEqual(GestureConfig().inputModel, .velocity)
+    func testVelocityAndPoseAreSelectable() {
+        XCTAssertEqual(GestureConfig().inputModel, .dwellShake)
         // A pinch tap does nothing in Velocity mode, and clicks in Pose mode.
         let pinch = SyntheticStream.pinchTaps(at: [0.6], fps: 30)
         XCTAssertEqual(Evaluation.merged(run(pinch)).clicks.count, 0)
@@ -336,9 +336,9 @@ final class VelocityGestureTests: XCTestCase {
         XCTAssertEqual(decoded.inputModel, .pose)
         XCTAssertEqual(decoded.velocity.vEnter, 1.2)
         XCTAssertEqual(decoded.velocity.vExit, VelocityParams().vExit)
-        // A settings file from before M7 gets Velocity mode with default parameters.
+        // A settings file without an input model gets the default (Hold & wiggle) and default parameters.
         let old = try GestureConfig.decodeLenient(Data(#"{"pinchEnter":0.3}"#.utf8))
-        XCTAssertEqual(old.inputModel, .velocity)
+        XCTAssertEqual(old.inputModel, .dwellShake)
         XCTAssertEqual(old.velocity, VelocityParams())
     }
 

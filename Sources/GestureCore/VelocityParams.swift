@@ -2,11 +2,13 @@ import Foundation
 
 /// Which input model drives clicks and scrolls.
 ///
+/// - `dwellShake` (default, "Hold & wiggle"): every movement moves the cursor; holding still for
+///   2 s clicks; wiggling back and forth 3 times within 1 s starts scrolling.
 /// - `velocity`: the hand is a mouse. A short flick from stillness is a tap (click), a long
 ///   vertical flick is a scroll; no finger pose is needed for anything but engaging (SPEC-M7).
 /// - `pose`: the original model: pinch to click/drag, fist to scroll, two pinches to zoom.
 public enum InputModel: String, Codable, CaseIterable, Equatable {
-    case velocity, pose
+    case dwellShake, velocity, pose
 }
 
 /// Which tap direction is the left click in Velocity mode.

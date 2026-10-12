@@ -11,6 +11,10 @@ extension PointerStateMachine {
 
     func resetVelocity() {
         _ = velocityEngine.reset()
+        shakeDetector.reset()
+        shakeStillSince = nil
+        dragPress = nil
+        dragSettleSince = nil
         warpOffset = .zero
         lastRawBox = nil
         trailAnchorTime = nil
@@ -162,14 +166,14 @@ extension PointerStateMachine {
 
     /// Put the cursor back at `point` with one move and keep it there: the smoother restarts at
     /// that point and the fingertip mapping picks up an offset that drains as the hand moves on.
-    private func warp(to point: Point2, at time: Double) -> StepOutput {
+    func warp(to point: Point2, at time: Double) -> StepOutput {
         reanchor(at: point, time: time)
         cursor = point
         lastEmittedCursor = point
         return StepOutput(intents: [.move(x: point.x, y: point.y)])
     }
 
-    private func reanchor(at point: Point2, time: Double) {
+    func reanchor(at point: Point2, time: Double) {
         guard let display = router.current, let raw = lastRawBox else { return }
         let box = ActiveBoxMapper.boxPoint(fromScreen: point, on: display)
         warpOffset = box - raw

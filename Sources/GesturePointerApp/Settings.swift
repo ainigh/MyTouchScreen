@@ -228,6 +228,11 @@ private struct PointerSettings: View {
 
     var body: some View {
         Form {
+            Section("Displays") {
+                Toggle("Stay on the largest display", isOn: $settings.config.stayOnLargestDisplay)
+                Text("Off: hold the cursor against an edge to move to the next display.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             Section("Reach") {
                 ValueSlider(title: "Active area", value: $settings.config.boxScale, range: 0.5...1.5,
                             format: "%.2f×",
@@ -260,24 +265,63 @@ private struct PointerSettings: View {
 private struct GestureSettings: View {
     @ObservedObject var settings: AppSettings
 
-    private var isVelocity: Bool { settings.config.inputModel == .velocity }
+    private var model: InputModel { settings.config.inputModel }
+    private var isVelocity: Bool { model == .velocity }
+
+    private var modelHelp: String {
+        switch model {
+        case .dwellShake:
+            return "Right hand: every movement moves the cursor; hold still for 2 seconds to click; wiggle back and forth (3 changes of direction within a second), then move to scroll, hold still to stop. Raise your left hand (any pose) to drag with the right; lower it to drop. With the left hand up, a wiggle zooms instead: then move up to zoom in, down to zoom out."
+        case .velocity:
+            return "Your hand is the mouse: a quick tap from a still hand clicks, a long flick scrolls, tap then move drags."
+        case .pose:
+            return "Pinch thumb and index to click, hold the pinch to drag, make a fist and move to scroll."
+        }
+    }
 
     var body: some View {
         Form {
             Section("Input model") {
                 Picker("Click and scroll with", selection: $settings.config.inputModel) {
+                    Text("Hold & wiggle").tag(InputModel.dwellShake)
                     Text("Velocity (flick)").tag(InputModel.velocity)
                     Text("Pose (pinch)").tag(InputModel.pose)
                 }
                 .pickerStyle(.segmented)
-                Text(isVelocity
-                     ? "Your hand is the mouse: a quick tap from a still hand clicks, a long flick scrolls, tap then move drags."
-                     : "Pinch thumb and index to click, hold the pinch to drag, make a fist and move to scroll.")
+                Text(modelHelp)
                     .font(.caption).foregroundStyle(.secondary)
             }
-            if isVelocity {
+            switch model {
+            case .dwellShake:
+                Section("Hold & wiggle") {
+                    ValueSlider(title: "Hold still to click", value: $settings.config.shake.dwellTime,
+                                range: 0.8...4.0, format: "%.1f s")
+                    ValueSlider(title: "Still means within", value: $settings.config.shake.dwellRadiusBox,
+                                range: 0.003...0.03, format: "%.3f",
+                                help: "Fraction of the screen width the cursor may wander while you hold still.")
+                    Stepper("Wiggle: \(settings.config.shake.reversals) changes of direction",
+                            value: $settings.config.shake.reversals, in: 2...6)
+                    ValueSlider(title: "Wiggle: within", value: $settings.config.shake.window,
+                                range: 0.5...2.0, format: "%.2f s")
+                    ValueSlider(title: "Wiggle: smallest stroke", value: $settings.config.shake.minStroke,
+                                range: 0.1...1.0, format: "%.2f × hand",
+                                help: "Shorter back-and-forth movements are ignored, so a shaky hand never scrolls.")
+                    ValueSlider(title: "Stop scrolling or zooming after holding still", value: $settings.config.shake.exitStillTime,
+                                range: 0.2...1.5, format: "%.2f s")
+                    ValueSlider(title: "Drag starts after moving", value: $settings.config.shake.dragCommitDistance,
+                                range: 0.3...1.5, format: "%.2f × hand",
+                                help: "With the left hand up, the right hand must move this far (or move a little and hold still) before the button goes down, so a wiggle can still mean zoom.")
+                    ValueSlider(title: "Zoom: doubles every", value: $settings.config.shake.zoomDoublingBox,
+                                range: 0.08...0.6, format: "%.2f of screen")
+                    Button("Reset Hold & wiggle to defaults") { settings.config.shake = ShakeParams() }
+                }
+                Section("Scroll") {
+                    ValueSlider(title: "Scroll speed", value: $settings.config.scrollSpeed, range: 0.25...4, format: "%.2f×")
+                    ScrollDirectionToggles(settings: settings)
+                }
+            case .velocity:
                 VelocityGestureSettings(settings: settings)
-            } else {
+            case .pose:
                 Section("Pinch") {
                     ValueSlider(title: "Pinch closes at", value: $settings.config.pinchEnter, range: 0.15...0.5,
                                 help: "Thumb-to-finger distance (in hand sizes) that counts as a pinch. Calibration sets this per display.")
@@ -291,18 +335,20 @@ private struct GestureSettings: View {
                     Toggle("Momentum", isOn: $settings.config.momentumEnabled)
                 }
             }
-            Section("More gestures") {
-                Toggle(isVelocity ? "Two-hand spread to zoom" : "Two-hand pinch to zoom", isOn: $settings.config.zoomEnabled)
-                Picker("Zoom sends", selection: $settings.zoomStyle) {
-                    ForEach(ZoomStyle.allCases, id: \.self) { Text($0.label).tag($0) }
+            if model != .dwellShake {
+                Section("More gestures") {
+                    Toggle(isVelocity ? "Two-hand spread to zoom" : "Two-hand pinch to zoom", isOn: $settings.config.zoomEnabled)
+                    Picker("Zoom sends", selection: $settings.zoomStyle) {
+                        ForEach(ZoomStyle.allCases, id: \.self) { Text($0.label).tag($0) }
+                    }
+                    .disabled(!settings.config.zoomEnabled)
+                    if model == .pose {
+                        Toggle("Thumb + ring pinch: app switcher (⌘⇥)", isOn: $settings.config.appSwitcherEnabled)
+                    }
+                    Toggle("Dwell to click", isOn: $settings.config.dwellClickEnabled)
+                    ValueSlider(title: "Dwell time", value: $settings.config.dwellClickDelay, range: 0.4...2.0, format: "%.2f s")
+                        .disabled(!settings.config.dwellClickEnabled)
                 }
-                .disabled(!settings.config.zoomEnabled)
-                if !isVelocity {
-                    Toggle("Thumb + ring pinch: app switcher (⌘⇥)", isOn: $settings.config.appSwitcherEnabled)
-                }
-                Toggle("Dwell to click", isOn: $settings.config.dwellClickEnabled)
-                ValueSlider(title: "Dwell time", value: $settings.config.dwellClickDelay, range: 0.4...2.0, format: "%.2f s")
-                    .disabled(!settings.config.dwellClickEnabled)
             }
             Section("Engage") {
                 Toggle("Open palm toggles Wisp on and off", isOn: $settings.config.palmEngageEnabled)

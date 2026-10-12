@@ -6,8 +6,11 @@ import Foundation
 /// Distances named `...Normalized` are divided by hand size (wrist → middle MCP).
 /// Distances named `...Box` are in active-box units (1.0 = the full width of the screen).
 public struct GestureConfig: Equatable, Codable {
-    /// Velocity (flick = tap, swipe = scroll) is the default; Pose (pinch/fist) stays available.
-    public var inputModel: InputModel = .velocity
+    /// Hold & wiggle (dwell = click, wiggle = scroll) is the default; Velocity (flick = tap)
+    /// and Pose (pinch/fist) stay available.
+    public var inputModel: InputModel = .dwellShake
+    /// Hold & wiggle thresholds.
+    public var shake = ShakeParams()
     /// Velocity-mode thresholds (SPEC-M7).
     public var velocity = VelocityParams()
 
@@ -78,6 +81,8 @@ public struct GestureConfig: Equatable, Codable {
     public var appSwitcherStepBox = 0.08
 
     // Multi-display
+    /// The hand drives the largest display only (no edge jumps, the real mouse doesn't move it).
+    public var stayOnLargestDisplay = true
     public var displayJumpDwell = 0.4
 
     // Dwell click

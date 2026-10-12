@@ -63,3 +63,12 @@ extension GestureConfig {
         return config
     }
 }
+
+extension GestureConfig {
+    /// Velocity mode (flick = tap), selectable in Settings; its tests use this.
+    static var velocityMode: GestureConfig {
+        var config = GestureConfig()
+        config.inputModel = .velocity
+        return config
+    }
+}
