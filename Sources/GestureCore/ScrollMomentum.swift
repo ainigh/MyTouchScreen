@@ -17,6 +17,13 @@ public struct ScrollMomentum {
         self.minSpeed = minSpeed
     }
 
+    /// Retune friction and stop speed without interrupting a glide in progress, so a settings
+    /// change never drops the glide without its momentum-ended phase.
+    public mutating func updateParameters(friction: Double, minSpeed: Double) {
+        self.friction = max(friction, 0.1)
+        self.minSpeed = minSpeed
+    }
+
     /// Begin gliding at `velocity`. Returns the momentum-began intent.
     public mutating func start(velocity: Point2, at time: Double) -> Intent {
         self.velocity = velocity

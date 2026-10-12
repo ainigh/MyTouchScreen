@@ -148,7 +148,8 @@ final class AppSettings: ObservableObject {
 struct SettingsView: View {
     @ObservedObject var settings: AppSettings
     let cameras: [CameraInfo]
-    let launchAtLogin: Binding<Bool>
+    @ObservedObject var launchAtLogin: LaunchAtLoginModel
+    let onLaunchAtLoginChange: (Bool) -> Void
     let onCalibrate: () -> Void
 
     var body: some View {
@@ -159,7 +160,8 @@ struct SettingsView: View {
                 .tabItem { Label("Gestures", systemImage: "hand.pinch") }
             CameraSettings(settings: settings, cameras: cameras, onCalibrate: onCalibrate)
                 .tabItem { Label("Camera", systemImage: "camera") }
-            GeneralSettings(settings: settings, launchAtLogin: launchAtLogin)
+            GeneralSettings(settings: settings, launchAtLogin: launchAtLogin,
+                            onLaunchAtLoginChange: onLaunchAtLoginChange)
                 .tabItem { Label("General", systemImage: "gearshape") }
         }
         .frame(width: 520, height: 470)
@@ -310,7 +312,8 @@ private struct CameraSettings: View {
 @MainActor
 private struct GeneralSettings: View {
     @ObservedObject var settings: AppSettings
-    let launchAtLogin: Binding<Bool>
+    @ObservedObject var launchAtLogin: LaunchAtLoginModel
+    let onLaunchAtLoginChange: (Bool) -> Void
     @State private var recording = false
     @State private var monitor: Any?
     @State private var message = ""
@@ -330,7 +333,15 @@ private struct GeneralSettings: View {
                 Toggle("Status dot when off", isOn: $settings.showStatusGlyph)
             }
             Section("System") {
-                Toggle("Launch at login", isOn: launchAtLogin)
+                // Reads the model, writes through the controller: after any attempt the model
+                // re-reads the system, so a failed change snaps the toggle back.
+                Toggle("Launch at login", isOn: Binding(
+                    get: { launchAtLogin.isEnabled },
+                    set: { onLaunchAtLoginChange($0) }))
+                    .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+                        // The user may have changed it in System Settings meanwhile.
+                        launchAtLogin.refresh()
+                    }
             }
             Section("Settings file") {
                 HStack {

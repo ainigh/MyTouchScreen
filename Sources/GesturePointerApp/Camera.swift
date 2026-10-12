@@ -53,6 +53,8 @@ final class Camera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
     private let output = AVCaptureVideoDataOutput()
     private var currentInput: AVCaptureDeviceInput?
     private var disconnectObserver: NSObjectProtocol?
+    private var connectObserver: NSObjectProtocol?
+    private var runtimeErrorObserver: NSObjectProtocol?
 
     /// Called on `frameQueue` for every delivered frame.
     var onFrame: ((CMSampleBuffer) -> Void)?
@@ -65,6 +67,12 @@ final class Camera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
     private var activeDeviceID: String?
     private var wantedResolution: CameraResolution = .hd720
     private var wantedDeviceID: String?
+    /// Whether the app wants frames (start called, stop not). Errors only restart in this case.
+    private var wantsRunning = false
+    /// Consecutive runtime-error restarts; reset once the camera has stayed up for a while.
+    private var restartAttempts = 0
+    private var lastRuntimeError: Double = 0
+    private static let maxRestartAttempts = 5
 
     override init() {
         super.init()
@@ -80,13 +88,35 @@ final class Camera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
                 // The camera in use went away (iPhone walked off, USB unplugged): fall back.
                 self.activeDeviceID = nil
                 self.configureOnSessionQueue()
-                self.reportError("\(device.localizedName) disconnected — switched cameras")
+                if self.currentInput != nil {
+                    self.reportError("\(device.localizedName) disconnected — switched cameras")
+                }
             }
+        }
+        connectObserver = NotificationCenter.default.addObserver(
+            forName: AVCaptureDevice.wasConnectedNotification, object: nil, queue: nil
+        ) { [weak self] note in
+            guard let self, let device = note.object as? AVCaptureDevice else { return }
+            self.sessionQueue.async { self.deviceConnected(device) }
+        }
+        runtimeErrorObserver = NotificationCenter.default.addObserver(
+            forName: Self.runtimeErrorNotification, object: session, queue: nil
+        ) { [weak self] note in
+            guard let self else { return }
+            let error = note.userInfo?.values.first { $0 is NSError } as? NSError
+            self.sessionQueue.async { self.recoverFromRuntimeError(error) }
         }
     }
 
+    /// AVCaptureSessionRuntimeErrorNotification by its string value: its Swift spelling changed
+    /// between SDKs (`.AVCaptureSessionRuntimeError` vs `AVCaptureSession.runtimeErrorNotification`),
+    /// and the string builds the same on every one.
+    private static let runtimeErrorNotification = Notification.Name("AVCaptureSessionRuntimeErrorNotification")
+
     deinit {
-        if let disconnectObserver { NotificationCenter.default.removeObserver(disconnectObserver) }
+        for observer in [disconnectObserver, connectObserver, runtimeErrorObserver] {
+            if let observer { NotificationCenter.default.removeObserver(observer) }
+        }
     }
 
     // MARK: Devices
@@ -124,27 +154,74 @@ final class Camera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
         sessionQueue.async {
             self.wantedDeviceID = deviceID
             self.wantedResolution = resolution
+            self.restartAttempts = 0
             self.configureOnSessionQueue()
+            // A new choice is also a retry after the camera gave up on runtime errors.
+            if self.wantsRunning && self.currentInput != nil && !self.session.isRunning {
+                self.session.startRunning()
+            }
         }
     }
 
     func start() {
         sessionQueue.async {
+            self.wantsRunning = true
+            self.restartAttempts = 0
             if self.currentInput == nil { self.configureOnSessionQueue() }
-            if !self.session.isRunning { self.session.startRunning() }
+            if self.currentInput != nil && !self.session.isRunning { self.session.startRunning() }
         }
     }
 
     func stop() {
         sessionQueue.async {
+            self.wantsRunning = false
             if self.session.isRunning { self.session.stopRunning() }
         }
+    }
+
+    // MARK: Recovery (session queue only)
+
+    /// AVFoundation stops the session on a runtime error (device hiccup, driver reset) and never
+    /// restarts it. Reopen the device and restart, backing off, and give up with a clear message
+    /// if it keeps failing rather than spinning.
+    private func recoverFromRuntimeError(_ error: NSError?) {
+        guard wantsRunning else { return }
+        let now = ProcessInfo.processInfo.systemUptime
+        // A camera that ran fine for a while since the last error gets a fresh set of retries.
+        if now - lastRuntimeError > 30 { restartAttempts = 0 }
+        lastRuntimeError = now
+        restartAttempts += 1
+        let reason = error?.localizedDescription ?? "unknown error"
+        guard restartAttempts <= Self.maxRestartAttempts else {
+            if session.isRunning { session.stopRunning() }
+            reportError("Camera keeps failing (\(reason)) — turn Wisp off and on, or pick another camera")
+            return
+        }
+        if restartAttempts == 1 { reportError("Camera stopped (\(reason)) — restarting") }
+        let delay = 0.5 * pow(2, Double(restartAttempts - 1))
+        sessionQueue.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self, self.wantsRunning else { return }
+            // Reopen the input: after a device-level error the old one is often dead.
+            self.configureOnSessionQueue()
+            if self.currentInput != nil && !self.session.isRunning { self.session.startRunning() }
+        }
+    }
+
+    /// A camera appeared. Switch to it if it's the user's saved choice and we're on a fallback,
+    /// or if we currently have no working camera at all.
+    private func deviceConnected(_ device: AVCaptureDevice) {
+        let isWanted = wantedDeviceID != nil && device.uniqueID == wantedDeviceID
+        guard activeDeviceID == nil || (isWanted && activeDeviceID != device.uniqueID) else { return }
+        configureOnSessionQueue()
+        if wantsRunning && currentInput != nil && !session.isRunning { session.startRunning() }
     }
 
     // MARK: Configuration (session queue only)
 
     private func configureOnSessionQueue() {
         guard let device = Self.preferredDevice(savedID: wantedDeviceID) else {
+            // Drop the stale input so the next start() or a newly connected camera retries.
+            dropCurrentInput()
             reportError("No camera found")
             return
         }
@@ -157,6 +234,7 @@ final class Camera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
             let input = try AVCaptureDeviceInput(device: device)
             guard session.canAddInput(input) else {
                 session.commitConfiguration()
+                activeDeviceID = nil
                 reportError("Can't use \(device.localizedName) right now")
                 return
             }
@@ -164,6 +242,7 @@ final class Camera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
             currentInput = input
         } catch {
             session.commitConfiguration()
+            activeDeviceID = nil
             reportError("Can't open \(device.localizedName): \(error.localizedDescription)")
             return
         }
@@ -181,6 +260,15 @@ final class Camera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
         activeDeviceID = device.uniqueID
         let info = Self.info(for: device)
         DispatchQueue.main.async { [weak self] in self?.onConfigured?(info, fps) }
+    }
+
+    private func dropCurrentInput() {
+        activeDeviceID = nil
+        guard let currentInput else { return }
+        session.beginConfiguration()
+        session.removeInput(currentInput)
+        session.commitConfiguration()
+        self.currentInput = nil
     }
 
     /// Pick the format matching the resolution with the highest frame rate up to `desiredFPS`.

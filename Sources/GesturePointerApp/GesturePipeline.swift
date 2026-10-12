@@ -80,6 +80,7 @@ final class GesturePipeline {
     func noteExternalMouse(at location: CGPoint) {
         queue.async {
             self.perform(self.machine.noteExternalMouse(at: Point2(location.x, location.y), time: CACurrentMediaTime()))
+            self.updateTicking()
         }
     }
 
@@ -163,19 +164,22 @@ final class GesturePipeline {
         publish(machine.snapshot, out.events)
     }
 
-    /// 120 Hz ticks only while engaged: they drive scroll momentum between camera frames.
+    /// 120 Hz ticks only while a scroll glide needs them: they drive momentum between camera
+    /// frames. An engaged hand with nothing gliding runs no timer at all.
     private func updateTicking() {
-        if machine.isEngaged && tickTimer == nil {
+        let wanted = machine.isEngaged && machine.needsTicks
+        if wanted && tickTimer == nil {
             let timer = DispatchSource.makeTimerSource(queue: queue)
             timer.schedule(deadline: .now(), repeating: .milliseconds(8), leeway: .milliseconds(2))
             timer.setEventHandler { [weak self] in
                 guard let self else { return }
                 let out = self.machine.tick(at: CACurrentMediaTime())
                 if !out.intents.isEmpty { self.perform(out) }
+                self.updateTicking()
             }
             timer.resume()
             tickTimer = timer
-        } else if !machine.isEngaged, let timer = tickTimer {
+        } else if !wanted, let timer = tickTimer {
             timer.cancel()
             tickTimer = nil
         }
