@@ -150,10 +150,13 @@ public struct ActiveBoxMapper: Equatable {
         let usable = profile.isUsable ? profile : CalibrationProfile.defaultProfile(
             pinchEnter: profile.pinchEnter, pinchExit: profile.pinchExit)
         self.profile = usable
-        self.boxScale = boxScale
+        // A zero scale collapses the box (the solve fails and the identity map is unmirrored);
+        // a negative one rotates it 180 degrees. Neither is a sensitivity, so use the default.
+        let scale = boxScale > 0 && boxScale.isFinite ? boxScale : 1
+        self.boxScale = scale
         self.edgeOvershoot = edgeOvershoot
         let centroid = usable.corners.reduce(Point2.zero, +) / 4
-        let scaled = usable.corners.map { centroid + ($0 - centroid) * boxScale }
+        let scaled = usable.corners.map { centroid + ($0 - centroid) * scale }
         let unit = [Point2(0, 0), Point2(1, 0), Point2(1, 1), Point2(0, 1)]
         self.homography = Homography.solve(from: scaled, to: unit) ?? .identity
     }

@@ -18,12 +18,19 @@ extension HandFrame: Codable {
                                                    debugDescription: "Expected 21 [x, y, confidence] points")
         }
         let confidence = try c.decodeIfPresent(Double.self, forKey: .confidence) ?? 1
+        // Every distance divides y by the aspect; zero or negative would turn them all into
+        // NaN/inf, and a NaN pinch distance never compares above the release threshold.
+        let aspect = try c.decodeIfPresent(Double.self, forKey: .aspect) ?? 16.0 / 9.0
+        guard aspect > 0, aspect.isFinite else {
+            throw DecodingError.dataCorruptedError(forKey: .aspect, in: c,
+                                                   debugDescription: "Image aspect must be positive")
+        }
         self.init(points: raw.map { Point2($0[0], $0[1]) },
                   jointConfidences: raw.map { $0.count > 2 ? $0[2] : confidence },
                   chirality: try c.decodeIfPresent(Chirality.self, forKey: .chirality) ?? .unknown,
                   confidence: confidence,
                   timestamp: try c.decodeIfPresent(Double.self, forKey: .timestamp) ?? 0,
-                  imageAspect: try c.decodeIfPresent(Double.self, forKey: .aspect) ?? 16.0 / 9.0)
+                  imageAspect: aspect)
     }
 
     public func encode(to encoder: Encoder) throws {

@@ -227,4 +227,79 @@ final class PointerStateMachineTests: XCTestCase {
         XCTAssertEqual(out.ups, 1)
         XCTAssertEqual(out.events.last, .disengaged(.hotkey))
     }
+
+    /// A second, idle hand in view at the camera's right while `primary` does its thing.
+    private func withBystanderHand(_ frames: [TrackingFrame], primaryUntil: Double) -> [TrackingFrame] {
+        var bystander = SyntheticHand.pointing(tipAt: Point2(0.8, 0.45))
+        bystander.chirality = .left
+        bystander.wrist = bystander.wristPlacing(indexTipAt: Point2(0.8, 0.45))
+        return frames.map { frame in
+            let other = bystander.frame(at: frame.timestamp)
+            let own = frame.timestamp < primaryUntil ? frame.hands : []
+            return TrackingFrame(timestamp: frame.timestamp, hands: own + [other])
+        }
+    }
+
+    func testPointingHandLeavingMidDragWhileOtherHandStaysReleasesButton() {
+        // Regression: the remaining hand became primary and the detector was reset silently,
+        // so no pinch-ended ever arrived and the button stayed down for good.
+        let drag = SyntheticStream.pinchTaps(at: [0.5], tapDuration: 5, duration: 2.0)
+        let out = drive(engagedMachine(), withBystanderHand(drag, primaryUntil: 1.2))
+        XCTAssertEqual(out.downs, 1)
+        XCTAssertEqual(out.ups, 1, "a hand swap must never leave the mouse button held")
+        XCTAssertTrue(out.events.contains(.dragEnded))
+    }
+
+    func testPointingHandLeavingMidScrollWhileOtherHandStaysEndsScroll() {
+        let scroll = SyntheticStream.fistScroll(offset: Point2(0, 0.15), openAtEnd: false)
+        let machine = engagedMachine()
+        let out = drive(machine, withBystanderHand(scroll, primaryUntil: 0.9))
+        XCTAssertEqual(out.scrolls(.began).count, 1)
+        XCTAssertEqual(out.scrolls(.ended).count, 1, "the scroll gesture must be closed")
+        XCTAssertNotEqual(machine.state, .scrolling)
+    }
+
+    func testDragStartedWhileMouseSuppressedSendsNoUnmatchedUp() {
+        // Regression: the drag began while the real mouse had priority (no down sent), but
+        // releasing the pinch still sent a mouse-up, which would cut short a real drag.
+        let machine = engagedMachine()
+        var out = StepOutput()
+        for frame in SyntheticStream.pinchTaps(at: [0.5], tapDuration: 0.5, duration: 1.6) {
+            if abs(frame.timestamp - 0.6) < 0.001 {
+                out.append(machine.noteExternalMouse(at: Point2(10, 10), time: frame.timestamp))
+            }
+            out.append(machine.process(frame))
+        }
+        XCTAssertEqual(out.downs, 0)
+        XCTAssertEqual(out.ups, 0)
+        XCTAssertFalse(out.events.contains(.dragEnded))
+        XCTAssertEqual(machine.state, .hover)
+    }
+
+    func testAppSwitcherWithZeroStepDoesNotTrap() {
+        // Regression: Int(x / 0) trapped on an imported settings file with a zero step.
+        var config = GestureConfig.default
+        config.appSwitcherEnabled = true
+        config.appSwitcherStepBox = 0
+        let out = drive(engagedMachine(config), SyntheticStream.pinchTaps(at: [0.5], tapDuration: 0.4, finger: .ring))
+        XCTAssertEqual(out.intents.last { if case .key = $0 { return true } else { return false } },
+                       .key(KeyStroke(.command, action: .up)))
+    }
+
+    func testMomentumWithZeroFrictionStaysFinite() {
+        // Regression: friction 0 made the glide distance 0/0 = NaN.
+        var momentum = ScrollMomentum(friction: 0, minSpeed: 40)
+        _ = momentum.start(velocity: Point2(0, 1000), at: 0)
+        var t = 0.0
+        var ended = false
+        while t < 120 && !ended {
+            t += 1.0 / 60
+            for intent in momentum.tick(at: t) {
+                guard case let .scroll(dx, dy, phase) = intent else { continue }
+                XCTAssertTrue(dx.isFinite && dy.isFinite)
+                if phase == .momentumEnded { ended = true }
+            }
+        }
+        XCTAssertTrue(ended, "momentum must always come to rest")
+    }
 }

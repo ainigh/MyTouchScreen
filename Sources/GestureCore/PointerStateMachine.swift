@@ -125,6 +125,9 @@ public final class PointerStateMachine {
     private var clickPoint = Point2.zero
     private var clickBox = Point2.zero
     private var ignoreCurrentPinch = false
+    /// True only between an emitted `.down` and its `.up`, so a drag that began while output was
+    /// suppressed never sends an unmatched mouse-up.
+    private var buttonDown = false
     private var lastClick: (time: Double, point: Point2, count: Int)?
 
     // Scroll
@@ -279,8 +282,17 @@ public final class PointerStateMachine {
         lastTime = time
         var out = StepOutput()
 
-        let (primaryHand, secondaryHand) = assignHands(frame.hands, at: time)
+        let (primaryHand, secondaryHand, primaryReplaced) = assignHands(frame.hands, at: time)
         snapshot.hands = frame.hands
+        if primaryReplaced && isEngaged {
+            // A different hand took over the pointer (the old one left while another stayed in
+            // view). Its detector was reset, so it will never report the old pinch or fist
+            // ending: release whatever the old hand was holding now.
+            out.append(cancelActiveGestures(at: time))
+            anchorOffset = nil
+            releaseBlend = nil
+            history.removeAll()
+        }
 
         // Engagement toggle by open palm, evaluated in every state.
         if let hand = primaryHand {
@@ -321,10 +333,11 @@ public final class PointerStateMachine {
 
     /// Keeps the pointing hand stable across frames: nearest-neighbour to its last palm
     /// position, with the preferred hand (or the user's right-most hand) chosen when it is new.
-    private func assignHands(_ hands: [HandFrame], at time: Double) -> (HandFrame?, HandFrame?) {
-        guard !hands.isEmpty else { return (nil, nil) }
+    private func assignHands(_ hands: [HandFrame], at time: Double) -> (HandFrame?, HandFrame?, Bool) {
+        guard !hands.isEmpty else { return (nil, nil, false) }
         var remaining = hands
         var primaryHand: HandFrame?
+        var primaryReplaced = false
 
         let primaryRecentlySeen = time - primaryLastSeen <= max(config.handDropoutGrace, 0.3)
         if let last = primaryLastPalm, primaryRecentlySeen {
@@ -340,7 +353,10 @@ public final class PointerStateMachine {
             // i.e. the smallest un-mirrored x.
             let index = preferred ?? remaining.indices.min { remaining[$0][.wrist].x < remaining[$1][.wrist].x }!
             primaryHand = remaining.remove(at: index)
-            if primaryLastPalm != nil { primary.reset() }
+            if primaryLastPalm != nil {
+                primary.reset()
+                primaryReplaced = true
+            }
         }
         primaryLastPalm = primaryHand?.palmCenter
         primaryLastSeen = time
@@ -356,7 +372,7 @@ public final class PointerStateMachine {
             secondarySeen = true
             secondaryLastPalm = secondaryHand?.palmCenter
         }
-        return (primaryHand, secondaryHand)
+        return (primaryHand, secondaryHand, primaryReplaced)
     }
 
     // MARK: Engagement by palm
@@ -430,9 +446,7 @@ public final class PointerStateMachine {
         var out = StepOutput()
         switch state {
         case .dragging:
-            let p = cursor ?? clickPoint
-            out.intents.append(.up(x: p.x, y: p.y))
-            out.events.append(.dragEnded)
+            out.append(releaseButton())
         case .scrolling:
             out.intents.append(.scroll(dx: 0, dy: 0, phase: .ended))
             out.events.append(.scrollEnded)
@@ -548,9 +562,7 @@ public final class PointerStateMachine {
             lastClick = (time, point, count)
         case .dragging:
             state = .hover
-            let p = cursor ?? clickPoint
-            out.intents.append(.up(x: p.x, y: p.y))
-            out.events.append(.dragEnded)
+            out.append(releaseButton())
         case .switchingApps:
             state = .hover
             out.intents.append(.key(KeyStroke(.command, action: .up)))
@@ -564,6 +576,14 @@ public final class PointerStateMachine {
             break
         }
         return out
+    }
+
+    /// Mouse-up for the drag in progress, only if its mouse-down was actually sent.
+    private func releaseButton() -> StepOutput {
+        guard buttonDown else { return StepOutput() }
+        buttonDown = false
+        let p = cursor ?? clickPoint
+        return StepOutput(intents: [.up(x: p.x, y: p.y)], events: [.dragEnded])
     }
 
     private func doubleClickRadiusPoints() -> Double {
@@ -711,6 +731,7 @@ public final class PointerStateMachine {
                     if !suppressed {
                         out.intents.append(.down(x: clickPoint.x, y: clickPoint.y))
                         out.events.append(.dragStarted)
+                        buttonDown = true
                         lastEmittedCursor = clickPoint
                     }
                     out.append(emitMove(screen, suppressed: suppressed))
@@ -799,7 +820,10 @@ public final class PointerStateMachine {
     // MARK: App switcher
 
     private func updateAppSwitcher(box: Point2, suppressed: Bool) -> StepOutput {
-        let steps = Int(((box.x - switcherOriginX) / config.appSwitcherStepBox).rounded(.towardZero))
+        // Bounded so a zero step setting or a far-off-box sample can never trap converting an
+        // infinite or huge value to Int, or spin out thousands of Tab presses.
+        let travel = clamp(box.x - switcherOriginX, -1, 1)
+        let steps = Int((travel / max(config.appSwitcherStepBox, 0.01)).rounded(.towardZero))
         var out = StepOutput()
         guard !suppressed else { return out }
         while switcherSteps < steps {

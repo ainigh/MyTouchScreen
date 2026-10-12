@@ -107,4 +107,14 @@ final class MomentumTests: XCTestCase {
         XCTAssertEqual(m.stop(), [.scroll(dx: 0, dy: 0, phase: .momentumEnded)])
         XCTAssertTrue(m.tick(at: 1).isEmpty)
     }
+
+    func testNonPositiveImageAspectIsRejected() {
+        // Regression: aspect 0 decoded fine and turned every distance into NaN, which left a
+        // pinch (and so a drag) unable to release.
+        let points = (0..<21).map { _ in "[0.5,0.5,1]" }.joined(separator: ",")
+        for aspect in ["0", "-1.7"] {
+            let json = "{\"format\":\"gesturepointer-replay\",\"version\":1,\"info\":{},\"frames\":[{\"t\":0,\"h\":[{\"c\":\"right\",\"s\":1,\"a\":\(aspect),\"p\":[\(points)]}]}]}"
+            XCTAssertThrowsError(try Recording.decode(Data(json.utf8)), "aspect \(aspect)")
+        }
+    }
 }
