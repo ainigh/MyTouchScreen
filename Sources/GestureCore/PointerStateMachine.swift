@@ -181,6 +181,12 @@ public final class PointerStateMachine {
     /// Where an armed drag presses: the cursor and right-hand centroid when the left hand came up.
     var dragPress: (point: Point2, centroid: Point2, time: Double)?
     var dragSettleSince: Double?
+    var tipSpeed: Double = 0
+    var lastTip: (time: Double, point: Point2)?
+
+    /// Where the real mouse pointer is, kept up to date by the app while disengaged, so a palm
+    /// engage can start on that display.
+    public var realMouseLocation: Point2?
 
     // Real mouse takes priority.
     var outputSuppressedUntil: Double = -.infinity
@@ -193,7 +199,7 @@ public final class PointerStateMachine {
         self.config = config
         self.calibration = calibration
         self.router = DisplayRouter(displays: displays, dwell: config.displayJumpDwell)
-        self.router.pinLargest = config.stayOnLargestDisplay
+        self.router.locked = config.stayOnEngagedDisplay
         let displayID = displays.first?.id ?? "main"
         self.mapper = ActiveBoxMapper(profile: calibration.profile(for: displayID),
                                       boxScale: config.boxScale, edgeOvershoot: config.edgeOvershoot)
@@ -225,7 +231,7 @@ public final class PointerStateMachine {
         }
         config = newConfig
         router.dwell = newConfig.displayJumpDwell
-        router.pinLargest = newConfig.stayOnLargestDisplay
+        router.locked = newConfig.stayOnEngagedDisplay
         smoother.updateConfig(newConfig)
         scrollFilter.parameters = newConfig.filter
         momentum.updateParameters(friction: Self.momentumFriction(newConfig), minSpeed: newConfig.momentumMinSpeed)
@@ -314,8 +320,10 @@ public final class PointerStateMachine {
         var out = StepOutput()
         let wasSuppressed = time < outputSuppressedUntil
         outputSuppressedUntil = time + 0.8
-        router.focus(containing: location)
-        rebuildMapper()
+        if !config.stayOnEngagedDisplay {
+            router.focus(containing: location)
+            rebuildMapper()
+        }
         if isEngaged && !wasSuppressed {
             out.events.append(.externalMouseTookOver)
         }
@@ -499,7 +507,9 @@ public final class PointerStateMachine {
         if palmHoldStart == nil { palmHoldStart = time }
         let needed = isEngaged ? config.palmDisengageDuration : config.palmEngageDuration
         if time - (palmHoldStart ?? time) >= needed {
-            let out = setEngaged(!isEngaged, reason: .palm, at: time)
+            // Engaging by palm starts on the display the real mouse pointer is on.
+            let out = setEngaged(!isEngaged, reason: .palm, at: time,
+                                 mouseLocation: isEngaged ? nil : realMouseLocation)
             palmLatched = true
             return out
         }

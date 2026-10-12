@@ -146,6 +146,10 @@ final class GesturePipeline {
 
     private func handle(_ frame: TrackingFrame) {
         recorder?.append(frame)
+        if !machine.isEngaged, let mouse = CGEvent(source: nil)?.location {
+            // A palm engage starts on the display the mouse pointer is on.
+            machine.realMouseLocation = Point2(mouse.x, mouse.y)
+        }
         if printsFrames { printLine(for: frame) }
         if let frameTap {
             frameTap(frame)

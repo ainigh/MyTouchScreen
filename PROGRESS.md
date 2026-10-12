@@ -86,6 +86,12 @@ Resume from the first unchecked item. Tick only after verification per `CLAUDE.m
 - [x] Committed
 - [ ] Parked: calibration by demonstrating each gesture (owner idea, later)
 
+## Owner recording + engaged-display (owner request)
+- [x] Analysed `recordings/owner-freeform-2026-10-12.json`: wiggles were finger wags → Hold & wiggle follows the fingertip; stillness and dwell thresholds set from measured real jitter
+- [x] Pointer stays on the display the mouse is on at engage (palm, hotkey or menu); no edge jumps
+- [x] Regression test replays the owner recording; 129 tests, build, check.sh green; Mac change (pipeline passes the mouse location while disengaged) reviewed, not compiled
+- [x] Committed
+
 ## Owner handoff (for the human, after Claude is done)
 1. `xcode-select --install` if not already done.
 2. `make app && make run`.

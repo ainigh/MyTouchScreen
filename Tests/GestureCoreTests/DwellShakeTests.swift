@@ -114,7 +114,10 @@ final class DwellShakeTests: XCTestCase {
             XCTAssertEqual(out.clicks.count, 0, "a wiggle and a scroll never click")
             // The cursor goes back to where the wiggle started and stays there while scrolling.
             let before = Evaluation.merged(outputs, to: 1.0).moves.last
-            let during = Evaluation.merged(outputs, from: 1.9, to: 3.0).moves
+            let began = outputs.first { $0.output.scrolls(.began).count > 0 }?.time ?? 0
+            let ended = outputs.first { $0.output.scrolls(.ended).count > 0 }?.time ?? 0
+            XCTAssertGreaterThan(ended, 2.4, "still scrolling while the hand moves (\(fps) fps)")
+            let during = Evaluation.merged(outputs, from: began + 0.001, to: ended - 0.001).moves
             XCTAssertEqual(during.count, 0, "cursor holds still while scrolling")
             if let before, let warp = Evaluation.merged(outputs, from: 1.0, to: 1.9).moves.last {
                 XCTAssertEqual(warp.x, before.x, accuracy: 3)
@@ -156,7 +159,7 @@ final class DwellShakeTests: XCTestCase {
         for i in 0..<120 {
             let t = Double(i) / 60
             let y = wiggle(t, start: 0.2, axis: Point2(0, 1)).y
-            if let d = detector.update(centroid: Point2(0.5, 0.3 + y), handSize: 0.12, at: t) { detections.append(d) }
+            if let d = detector.update(point: Point2(0.5, 0.3 + y), handSize: 0.12, at: t) { detections.append(d) }
         }
         XCTAssertEqual(detections.count, 1)
         XCTAssertEqual(detections.first?.vertical, true)
@@ -252,19 +255,67 @@ final class DwellShakeTests: XCTestCase {
         XCTAssertEqual(out.moves.count + out.clicks.count + out.rightClicks, 0, "the left hand alone never points")
     }
 
-    func testPointerStaysOnTheLargestDisplay() {
-        let small = DisplayInfo(id: "S", frame: Rect(x: 0, y: 0, width: 1440, height: 900))
-        let big = DisplayInfo(id: "B", frame: Rect(x: 1440, y: 0, width: 2560, height: 1440))
-        let machine = PointerStateMachine(config: config, displays: [small, big])
-        _ = machine.setEngaged(true, at: 0, mouseLocation: Point2(100, 100))
-        var out = StepOutput()
-        // Sweep to the far edge and hold there: no jump to the small display.
-        for frame in stream(duration: 3, offset: { self.move($0, start: 0.5, to: Point2(-0.4, 0), duration: 0.6) }) {
-            out.append(machine.process(frame))
+    private let small = DisplayInfo(id: "S", frame: Rect(x: 0, y: 0, width: 1440, height: 900))
+    private let big = DisplayInfo(id: "B", frame: Rect(x: 1440, y: 0, width: 2560, height: 1440))
+
+    func testPointerStaysOnTheDisplayTheMouseWasOnWhenEngaged() {
+        for (mouse, id, range) in [(Point2(100, 100), "S", 0.0..<1440.0), (Point2(2000, 300), "B", 1440.0..<4000.0)] {
+            let machine = PointerStateMachine(config: config, displays: [small, big])
+            _ = machine.setEngaged(true, at: 0, mouseLocation: mouse)
+            var out = StepOutput()
+            // Sweep to the far edge and hold there: no jump to the other display.
+            for frame in stream(duration: 3, offset: { self.move($0, start: 0.5, to: Point2(0.4, 0), duration: 0.6) }) {
+                out.append(machine.process(frame))
+            }
+            XCTAssertEqual(machine.snapshot.displayID, id)
+            XCTAssertFalse(out.moves.isEmpty)
+            XCTAssertTrue(out.moves.allSatisfy { range.contains($0.x) }, "every move stays on \(id)")
+            XCTAssertFalse(out.events.contains { if case .displayChanged = $0 { return true } else { return false } })
+            // Touching the real mouse on the other display doesn't move the hand's display.
+            _ = machine.noteExternalMouse(at: id == "S" ? Point2(2000, 300) : Point2(100, 100), time: 3.1)
+            XCTAssertEqual(machine.snapshot.displayID, id)
         }
-        XCTAssertFalse(out.moves.isEmpty)
-        XCTAssertTrue(out.moves.allSatisfy { $0.x >= 1440 }, "every move lands on the big display")
-        XCTAssertFalse(out.events.contains { if case .displayChanged = $0 { return true } else { return false } })
+    }
+
+    func testPalmEngageStartsOnTheMousesDisplay() {
+        let machine = PointerStateMachine(config: config, displays: [small, big])
+        machine.realMouseLocation = Point2(2000, 300)
+        for frame in SyntheticStream.palmHold(hold: 1.0) { _ = machine.process(frame) }
+        XCTAssertTrue(machine.isEngaged)
+        XCTAssertEqual(machine.snapshot.displayID, "B")
+    }
+
+    // MARK: Owner recording
+
+    /// The owner's first free-form session (recordings/owner-freeform-2026-10-12.json): they
+    /// wagged the index finger while the palm stayed put, and raised the left hand twice.
+    func testOwnerRecordingFingerWiggleScrollsAndLeftHandDrags() throws {
+        let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("recordings/owner-freeform-2026-10-12.json")
+        var recorded = try Recording.load(from: url).rebased()
+        // Replay with the settings it was recorded with, but today's Hold & wiggle defaults.
+        if let json = recorded.info["config"], var settings = try? GestureConfig.decodeLenient(Data(json.utf8)) {
+            settings.shake = ShakeParams()
+            recorded.info["config"] = nil
+            let machine = PointerStateMachine(config: settings, displays: [testDisplay])
+            var log: [(Double, StepOutput)] = []
+            for frame in recorded.frames { log.append((frame.timestamp, machine.process(frame))) }
+            func any(_ range: ClosedRange<Double>, _ test: (StepOutput) -> Bool) -> Bool {
+                log.contains { range.contains($0.0) && test($0.1) }
+            }
+            XCTAssertTrue(log.contains { $0.1.events.contains(.engaged) })
+            // Finger wags: sideways around 29–32 s, up/down around 32–33 s and 39–41 s.
+            XCTAssertTrue(any(29...32.5) { $0.scrolls(.began).count > 0 }, "sideways finger wag scrolls")
+            XCTAssertTrue(any(39...41.5) { $0.scrolls(.began).count > 0 }, "up/down finger wag scrolls")
+            // Left hand up 40–53 s and 70–78 s: drag and drop, once each.
+            XCTAssertTrue(any(41...53) { $0.downs > 0 })
+            XCTAssertTrue(any(70...78) { $0.downs > 0 })
+            XCTAssertEqual(log.reduce(0) { $0 + $1.1.downs }, log.reduce(0) { $0 + $1.1.ups })
+            XCTAssertEqual(log.reduce(0) { $0 + $1.1.clicks.count + $1.1.rightClicks }, 0,
+                           "the session never held still for 2 s, so nothing clicks")
+        } else {
+            XCTFail("recording has no config")
+        }
     }
 
     // MARK: Engagement and modes
