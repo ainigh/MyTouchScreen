@@ -157,8 +157,14 @@ extension PointerStateMachine {
                 freeze = nil
                 if let display = router.current {
                     let heldBox = ActiveBoxMapper.boxPoint(fromScreen: held.point, on: display)
-                    glide = (heldBox - (rawBox + warpOffset), time)
-                    smoother.reset(to: heldBox, at: time)
+                    if config.pointerResponse.isDirect {
+                        glide = (heldBox - (rawBox + warpOffset), time)
+                        smoother.reset(to: heldBox, at: time)
+                    } else {
+                        // Scaled response: the cursor isn't under the finger anyway, so it simply
+                        // carries on from the held point (a glide would be scaled too).
+                        smoother.reset(hand: rawBox + warpOffset, cursor: heldBox, at: time)
+                    }
                 }
             } else {
                 freeze = held

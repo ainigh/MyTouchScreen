@@ -241,6 +241,11 @@ private struct PointerSettings: View {
                 EndsSlider(title: "Steadiness", value: $settings.config.steadiness, range: 0...1,
                            low: "Snappy", high: "Steady",
                            help: "Toward Steady if the cursor shivers while your hand is still; toward Snappy if it trails behind your finger.")
+                Picker("Cursor speed", selection: $settings.config.pointerResponse) {
+                    ForEach(PointerResponse.allCases, id: \.self) { Text($0.title).tag($0) }
+                }
+                Text(settings.config.pointerResponse.summary)
+                    .font(.caption).foregroundStyle(.secondary)
                 EndsSlider(title: "Hand movement to cover the screen", value: $settings.config.boxScale,
                            range: 0.5...1.5, low: "Less", high: "More",
                            help: "Less: small movements cross the whole screen. More: bigger movements, finer aim. Calibrating (Camera tab) sets the area by pointing at the corners.")

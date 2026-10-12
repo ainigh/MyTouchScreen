@@ -23,6 +23,8 @@ public struct GestureConfig: Equatable, Codable {
     /// Sensitivity: scale of the active box (smaller = less hand motion per screen).
     public var boxScale = 1.0
     public var edgeOvershoot = 0.04
+    /// Cursor speed vs hand speed (presets to try). `.direct` is the laser pointer.
+    public var pointerResponse: PointerResponse = .direct
 
     // Poses
     public var curlExtendedRatio = 1.45
@@ -89,6 +91,7 @@ extension GestureConfig {
         deadZoneBox = defaults.deadZoneBox
         restDeadZoneBox = defaults.restDeadZoneBox
         restLockDelay = defaults.restLockDelay
+        pointerResponse = defaults.pointerResponse
     }
 
     /// Decode settings JSON written by any version: keys missing from `data` keep their default
