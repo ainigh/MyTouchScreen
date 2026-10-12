@@ -172,6 +172,14 @@ final class PreviewView: NSView {
     }
 
     func update(hands: [HandFrame], primaryIndex: Int?) {
+        // The mirror comes from our own transform only. The connection exists once the camera
+        // has an input (and is replaced when the camera changes), so pin it here; left on its
+        // automatic default it can mirror too and the image would be flipped under the skeleton.
+        if let connection = previewLayer.connection, connection.isVideoMirroringSupported,
+           connection.automaticallyAdjustsVideoMirroring || connection.isVideoMirrored {
+            connection.automaticallyAdjustsVideoMirroring = false
+            connection.isVideoMirrored = false
+        }
         let bonePath = CGMutablePath()
         let jointPath = CGMutablePath()
         for hand in hands {

@@ -276,6 +276,28 @@ final class PointerStateMachineTests: XCTestCase {
         XCTAssertEqual(machine.state, .hover)
     }
 
+    func testRealMouseDuringHandDragReleasesButtonWhereTheMouseIs() {
+        // Regression: the synthetic button stayed down when the user grabbed the real mouse
+        // mid-drag, so the real mouse kept dragging whatever the hand had picked up.
+        let machine = engagedMachine()
+        var out = StepOutput()
+        var tookOver = false
+        for frame in SyntheticStream.pinchTaps(at: [0.5], tapDuration: 0.8, duration: 1.8) {
+            out.append(machine.process(frame))
+            if !tookOver && machine.state == .dragging && frame.timestamp >= 1.0 {
+                out.append(machine.noteExternalMouse(at: Point2(10, 10), time: frame.timestamp))
+                tookOver = true
+            }
+        }
+        XCTAssertTrue(tookOver)
+        XCTAssertEqual(out.downs, 1)
+        XCTAssertEqual(out.ups, 1)
+        XCTAssertEqual(out.intents.last { if case .up = $0 { return true } else { return false } },
+                       .up(x: 10, y: 10))
+        XCTAssertTrue(out.clicks.isEmpty)
+        XCTAssertEqual(machine.state, .hover)
+    }
+
     func testAppSwitcherWithZeroStepDoesNotTrap() {
         // Regression: Int(x / 0) trapped on an imported settings file with a zero step.
         var config = GestureConfig.default

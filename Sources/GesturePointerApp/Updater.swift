@@ -16,6 +16,8 @@ import GestureCore
 final class Updater {
     nonisolated static let repo = "ainigh/MyTouchScreen"
     nonisolated static let assetName = "GesturePointer.zip"
+    /// The bundle name make-app.sh builds and zips (the installed copy may have been renamed).
+    nonisolated static let builtAppName = "GesturePointer.app"
 
     /// The branch this copy follows (make-app.sh writes it into Info.plist).
     nonisolated static var branch: String {
@@ -145,9 +147,20 @@ final class Updater {
             commit = head
             newApp = try buildFromSource(head, in: scratch, step: step)
         }
-        let newID = Bundle(url: newApp)?.bundleIdentifier
+        let newBundle = Bundle(url: newApp)
+        let newID = newBundle?.bundleIdentifier
         guard newID != nil, newID == Bundle.main.bundleIdentifier else {
             throw Problem("the new copy isn't \(app.lastPathComponent)")
+        }
+        // Never swap in something that isn't the commit we meant to install, or whose bundle
+        // was damaged on the way (a truncated download, a half-finished build).
+        guard newBundle?.object(forInfoDictionaryKey: "WispCommit") as? String == commit.sha else {
+            throw Problem("the new copy wasn't built from \(commit.short)")
+        }
+        do {
+            try run("/usr/bin/codesign", ["--verify", "--deep", "--strict", newApp.path])
+        } catch {
+            throw Problem("the new copy's signature doesn't check out: \(error.localizedDescription)")
         }
         _ = try? run("/usr/bin/xattr", ["-dr", "com.apple.quarantine", newApp.path])
 
@@ -159,7 +172,7 @@ final class Updater {
         relaunch.executableURL = URL(fileURLWithPath: "/bin/sh")
         relaunch.arguments = ["-c", "while kill -0 \(getpid()) 2>/dev/null; do sleep 0.2; done; /usr/bin/open \"$0\"", app.path]
         try relaunch.run()
-        DispatchQueue.main.async { NSApp.terminate(nil) }
+        DispatchQueue.main.async { MainActor.assumeIsolated { NSApp.terminate(nil) } }
     }
 
     nonisolated static func downloadPrebuilt(_ release: Release, into scratch: URL) throws -> URL {
@@ -176,7 +189,7 @@ final class Updater {
         let unpacked = scratch.appendingPathComponent("unpacked")
         try FileManager.default.createDirectory(at: unpacked, withIntermediateDirectories: true)
         try run("/usr/bin/ditto", ["-x", "-k", zip.path, unpacked.path])
-        return unpacked.appendingPathComponent(Bundle.main.bundleURL.lastPathComponent)
+        return unpacked.appendingPathComponent(builtAppName)
     }
 
     /// Downloads the commit's source and runs scripts/make-app.sh on it (for this Mac only).
@@ -206,7 +219,7 @@ final class Updater {
             env["WISP_SIGN_IDENTITY"] = identity
         }
         try run("/bin/bash", [src.appendingPathComponent("scripts/make-app.sh").path], env: env, in: src, logOutput: true)
-        return src.appendingPathComponent("build").appendingPathComponent(Bundle.main.bundleURL.lastPathComponent)
+        return src.appendingPathComponent("build").appendingPathComponent(builtAppName)
     }
 
     /// The package needs Swift 5.9+. make-app.sh also uses an installed Xcode when the command

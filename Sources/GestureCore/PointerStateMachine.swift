@@ -264,6 +264,18 @@ public final class PointerStateMachine {
         if isEngaged && !wasSuppressed {
             out.events.append(.externalMouseTookOver)
         }
+        if state == .dragging {
+            // Our synthetic button is still down, so the real mouse would drag whatever the
+            // hand grabbed. Let go where the real mouse is (never warp it back), and treat the
+            // rest of this pinch as a pause so its release does nothing.
+            if buttonDown {
+                buttonDown = false
+                out.intents.append(.up(x: location.x, y: location.y))
+                out.events.append(.dragEnded)
+            }
+            state = .pinched
+            ignoreCurrentPinch = true
+        }
         lastEmittedCursor = location
         return out
     }

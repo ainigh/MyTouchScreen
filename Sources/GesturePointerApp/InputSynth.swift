@@ -53,6 +53,11 @@ final class InputSynth {
         source?.setLocalEventsFilterDuringSuppressionState(
             [.permitLocalMouseEvents, .permitLocalKeyboardEvents, .permitSystemDefinedEvents],
             state: .eventSuppressionStateSuppressionInterval)
+        // The default filter while a synthetic drag is in progress blocks the real mouse;
+        // permit it there too, so a pinch-drag can never lock out the user's own mouse.
+        source?.setLocalEventsFilterDuringSuppressionState(
+            [.permitLocalMouseEvents, .permitLocalKeyboardEvents, .permitSystemDefinedEvents],
+            state: .eventSuppressionStateRemoteMouseDrag)
     }
 
     // MARK: Intents

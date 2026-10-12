@@ -53,6 +53,9 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         statusItem.menu = menu
         statusItem.button?.toolTip = "Wisp"
         update(status: actions.menuStatus)
+        // Populate once up front: a status item whose menu is empty may not open at all, and
+        // then menuNeedsUpdate would never get a chance to fill it.
+        menuNeedsUpdate(menu)
     }
 
     func update(status: MenuBarStatus) {

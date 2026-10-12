@@ -47,6 +47,8 @@ final class AppController: MenuBarActions {
     private var lastTakeoverToast: Double = 0
     private var registeredHotkey: HotkeyCombo?
     private var configuredCamera: (id: String?, resolution: CameraResolution)?
+    private var appliedConfig: (config: GestureConfig, zoomStyle: ZoomStyle)?
+    private var appliedCalibration: CalibrationSet?
     private var activeCameraName = ""
     private var activeCameraFPS = 0.0
     private var axGranted = Permissions.accessibilityGranted
@@ -164,8 +166,16 @@ final class AppController: MenuBarActions {
     // MARK: Settings
 
     private func applySettings() {
-        pipeline.update(config: settings.config, zoomStyle: settings.zoomStyle)
-        pipeline.update(calibration: settings.calibration)
+        // Only push real changes: re-applying a config resets the filters and scroll momentum,
+        // which would visibly hitch a gesture whenever an unrelated setting (preview corner) moves.
+        if appliedConfig?.config != settings.config || appliedConfig?.zoomStyle != settings.zoomStyle {
+            appliedConfig = (settings.config, settings.zoomStyle)
+            pipeline.update(config: settings.config, zoomStyle: settings.zoomStyle)
+        }
+        if appliedCalibration != settings.calibration {
+            appliedCalibration = settings.calibration
+            pipeline.update(calibration: settings.calibration)
+        }
         sounds.enabled = settings.soundsEnabled
         overlay?.showStatusGlyph = settings.showStatusGlyph
 
@@ -464,6 +474,11 @@ final class AppController: MenuBarActions {
     }
 
     func toggleEngaged() {
+        // The kill switch must always work, even if camera access was revoked mid-session.
+        if engaged {
+            pipeline.setEngaged(false, reason: .hotkey)
+            return
+        }
         guard Permissions.cameraState == .granted else {
             showWelcome()
             return

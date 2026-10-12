@@ -28,7 +28,18 @@ MainActor.assumeIsolated {
     app.delegate = delegate
     // Menu-bar only: no Dock icon, no app menu (Info.plist also sets LSUIElement).
     app.setActivationPolicy(.accessory)
-    app.run()
+    // Ctrl-C / kill from a terminal (`make run`, headless mode) quits through the normal path,
+    // so applicationWillTerminate releases any held mouse button or modifier.
+    let signalSources = [SIGINT, SIGTERM].map { signalNumber -> DispatchSourceSignal in
+        signal(signalNumber, SIG_IGN)
+        let source = DispatchSource.makeSignalSource(signal: signalNumber, queue: .main)
+        source.setEventHandler { MainActor.assumeIsolated { NSApp.terminate(nil) } }
+        source.resume()
+        return source
+    }
+    // NSApplication holds its delegate weakly; without this the optimizer may release the
+    // delegate right after the assignment and applicationDidFinishLaunching never runs.
+    withExtendedLifetime((delegate, signalSources)) { app.run() }
 }
 #else
 // GesturePointer is a macOS app. On other platforms the package still builds (so GestureCore
