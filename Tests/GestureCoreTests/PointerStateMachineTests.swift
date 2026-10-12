@@ -103,6 +103,53 @@ final class PointerStateMachineTests: XCTestCase {
         XCTAssertTrue(out.moves.isEmpty || out.moves.count < 40)
     }
 
+    func testNeedsTicksOnlyWhileGliding() {
+        let machine = engagedMachine()
+        XCTAssertFalse(machine.needsTicks, "an engaged hand with no glide needs no tick timer")
+        let frames = SyntheticStream.fistScroll(offset: Point2(0, 0.15))
+        var sawGlide = false
+        for frame in frames {
+            _ = machine.process(frame)
+            if machine.needsTicks { sawGlide = true }
+        }
+        XCTAssertTrue(sawGlide, "a flick must request ticks for its glide")
+        var t = (frames.last?.timestamp ?? 0)
+        while machine.needsTicks && t < 60 {
+            t += 1.0 / 120
+            _ = machine.tick(at: t)
+        }
+        XCTAssertFalse(machine.needsTicks, "ticks stop once the glide comes to rest")
+    }
+
+    func testConfigChangeMidGlideKeepsMomentumEnded() {
+        // Regression: re-applying settings replaced the momentum object, dropping a glide in
+        // progress without its momentum-ended phase.
+        let machine = engagedMachine()
+        let frames = SyntheticStream.fistScroll(offset: Point2(0, 0.15))
+        var out = StepOutput()
+        var changedMidGlide = false
+        var t = 0.0
+        for frame in frames {
+            out.append(machine.process(frame))
+            t = frame.timestamp
+            if machine.needsTicks && !changedMidGlide {
+                changedMidGlide = true
+                var config = GestureConfig.default
+                config.momentumFriction += 1
+                machine.updateConfig(config)
+                XCTAssertTrue(machine.needsTicks, "a settings change must not drop the glide")
+                break
+            }
+        }
+        XCTAssertTrue(changedMidGlide)
+        while machine.needsTicks && t < 60 {
+            t += 1.0 / 120
+            out.append(machine.tick(at: t))
+        }
+        XCTAssertEqual(out.scrolls(.momentumBegan).count, 1)
+        XCTAssertEqual(out.scrolls(.momentumEnded).count, 1)
+    }
+
     func testReverseScrollDirectionSetting() {
         var config = GestureConfig.default
         config.naturalScrolling = false

@@ -183,7 +183,7 @@ public final class PointerStateMachine {
         router.dwell = newConfig.displayJumpDwell
         smoother.updateConfig(newConfig)
         scrollFilter.parameters = newConfig.filter
-        momentum = ScrollMomentum(friction: newConfig.momentumFriction, minSpeed: newConfig.momentumMinSpeed)
+        momentum.updateParameters(friction: newConfig.momentumFriction, minSpeed: newConfig.momentumMinSpeed)
         rebuildMapper(force: true)
     }
 
@@ -279,6 +279,10 @@ public final class PointerStateMachine {
         lastEmittedCursor = location
         return out
     }
+
+    /// True while something between camera frames needs `tick(at:)` (a scroll glide). The app
+    /// runs its tick timer only while this holds, so an engaged but still hand costs no timer.
+    public var needsTicks: Bool { momentum.isActive }
 
     /// Drive time-based effects (scroll momentum) between camera frames.
     public func tick(at time: Double) -> StepOutput {

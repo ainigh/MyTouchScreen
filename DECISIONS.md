@@ -76,3 +76,8 @@ One line per judgment call, newest at the bottom. All delegated by the owner.
 - InputSynth permits local mouse/keyboard events in the remote-mouse-drag suppression state as well, so the real mouse keeps working during a pinch-drag.
 - Quit (menu, Ctrl-C or SIGTERM) disengages the state machine, releases held buttons/modifiers and stops InputSynth posting before exit; the hotkey always disengages, even if camera access was revoked.
 - If the real mouse moves during a hand drag, the synthetic button is released at the real mouse position and the rest of that pinch is ignored, so the real mouse never drags what the hand grabbed.
+- Launch at login is read back from `SMAppService` after every change (an observable model, re-read when the app activates), never assumed from the request, so a failed change can't leave the toggle showing the wrong state; "requires approval" opens Login Items and says so.
+- After a capture-session runtime error the camera reopens its device and restarts, backing off 0.5–8 s, at most 5 times within 30 s before giving up with a message; turning Wisp off and on, or picking a camera, retries. The notification is observed by its string name because its Swift spelling differs between SDKs.
+- A camera that connects is used again when it's the saved choice (Continuity iPhone back in range) or when no camera is working; a failed configure drops the stale input so `start()` retries.
+- The 120 Hz tick timer runs only while a scroll glide is in progress (`needsTicks`), not for the whole time the hand is engaged.
+- Changing settings mid-glide retunes the momentum instead of replacing it, so the glide still sends its momentum-ended phase.

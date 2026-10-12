@@ -25,6 +25,7 @@ final class AppController: MenuBarActions {
     private let hotkey = GlobalHotkey()
     private let permissionMonitor = PermissionMonitor()
     private let updater = Updater()
+    private let launchAtLogin = LaunchAtLoginModel()
     private var userCheckedForUpdates = false
     private var announcedUpdate: UpdatePlan?
 
@@ -446,7 +447,10 @@ final class AppController: MenuBarActions {
     var cameras: [CameraInfo] { Camera.availableCameras() }
     var selectedCameraID: String? { settings.cameraID }
     var showsPreview: Bool { settings.showPreview }
-    var launchesAtLogin: Bool { LaunchAtLogin.isEnabled }
+    var launchesAtLogin: Bool {
+        launchAtLogin.refresh()
+        return launchAtLogin.isEnabled
+    }
     var hotkeyDisplay: String { settings.hotkey.displayString }
     var versionLine: String { updater.versionLine }
     var updateState: Updater.State { updater.state }
@@ -525,11 +529,18 @@ final class AppController: MenuBarActions {
     }
 
     func toggleLaunchAtLogin() {
-        do {
-            try LaunchAtLogin.set(!LaunchAtLogin.isEnabled)
-        } catch {
-            overlay?.toast("Couldn't change Login Items: \(error.localizedDescription)", symbol: "xmark.octagon",
-                           tint: Theme.warning)
+        launchAtLogin.refresh()
+        setLaunchAtLogin(!launchAtLogin.isEnabled)
+    }
+
+    private func setLaunchAtLogin(_ enabled: Bool) {
+        switch launchAtLogin.set(enabled) {
+        case .changed:
+            break
+        case .needsApproval:
+            overlay?.toast("Allow Wisp in Login Items to finish", symbol: "person.badge.key", tint: Theme.warning)
+        case .failed(let message):
+            overlay?.toast("Couldn't change Login Items: \(message)", symbol: "xmark.octagon", tint: Theme.warning)
         }
     }
 
@@ -550,22 +561,15 @@ final class AppController: MenuBarActions {
     }
 
     func showSettings() {
+        launchAtLogin.refresh()
         if let settingsWindow {
             settingsWindow.makeKeyAndOrderFront(nil)
             NSApp.activate()
             return
         }
-        let launchBinding = Binding<Bool>(
-            get: { LaunchAtLogin.isEnabled },
-            set: { [weak self] newValue in
-                do {
-                    try LaunchAtLogin.set(newValue)
-                } catch {
-                    self?.overlay?.toast("Couldn't change Login Items", symbol: "xmark.octagon", tint: Theme.warning)
-                }
-            })
         let view = SettingsView(settings: settings, cameras: Camera.availableCameras(),
-                                launchAtLogin: launchBinding,
+                                launchAtLogin: launchAtLogin,
+                                onLaunchAtLoginChange: { [weak self] enabled in self?.setLaunchAtLogin(enabled) },
                                 onCalibrate: { [weak self] in self?.startCalibration() })
         let window = NSWindow(contentViewController: NSHostingController(rootView: view))
         window.title = "Wisp Settings"
