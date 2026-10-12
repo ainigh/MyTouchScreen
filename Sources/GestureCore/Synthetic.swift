@@ -191,49 +191,6 @@ public enum SyntheticStream {
         }
     }
 
-    /// Still hand doing pinch taps of `tapDuration` at the given start times.
-    public static func pinchTaps(at starts: [Double], tapDuration: Double = 0.12, finger: PinchFinger = .index,
-                                 tip: Point2 = Point2(0.5, 0.45), duration: Double? = nil,
-                                 fps: Double = 30, noise: Double = 0) -> [TrackingFrame] {
-        let total = duration ?? ((starts.max() ?? 0) + tapDuration + 0.8)
-        return generate(duration: total, fps: fps, noise: noise) { t in
-            var hand = SyntheticHand.pointing(tipAt: tip)
-            hand.pinchFinger = finger
-            hand.pinchAmount = starts.map { tapAmount(at: t, start: $0, duration: tapDuration) }.max() ?? 0
-            return [hand]
-        }
-    }
-
-    /// Pinch at `start`, hold, move the hand by `offset` (image units) while pinched, release.
-    public static func drag(start: Double = 0.5, holdBeforeMove: Double = 0.35, moveDuration: Double = 0.5,
-                            offset: Point2 = Point2(-0.1, 0.05), tip: Point2 = Point2(0.5, 0.45),
-                            fps: Double = 30) -> [TrackingFrame] {
-        let release = start + holdBeforeMove + moveDuration + 0.2
-        return generate(duration: release + 0.8, fps: fps) { t in
-            let u = clamp01((t - start - holdBeforeMove) / moveDuration)
-            var hand = SyntheticHand.pointing(tipAt: tip)
-            hand.wrist += offset * u
-            hand.pinchAmount = tapAmount(at: t, start: start, duration: release - start)
-            return [hand]
-        }
-    }
-
-    /// Fist made at `start`, moved by `offset` over `moveDuration`, opened at the end of the
-    /// move (so it is released while moving: momentum).
-    public static func fistScroll(start: Double = 0.5, moveDuration: Double = 0.4,
-                                  offset: Point2 = Point2(0, 0.15), fps: Double = 30,
-                                  openAtEnd: Bool = true) -> [TrackingFrame] {
-        let end = start + 0.2 + moveDuration
-        return generate(duration: end + 1.0, fps: fps) { t in
-            var hand = SyntheticHand.pointing(tipAt: Point2(0.5, 0.4))
-            let isFist = t >= start && (!openAtEnd || t < end)
-            if isFist { hand.makeFist() }
-            let u = clamp01((t - start - 0.2) / moveDuration)
-            hand.wrist += offset * u
-            return [hand]
-        }
-    }
-
     /// Both hands held up as still open palms for `hold` seconds starting at `start` (the
     /// engage toggle), then the right hand points again and the left goes down. With
     /// `bothHands: false` only the right hand opens (which must not toggle).
@@ -259,20 +216,46 @@ public enum SyntheticStream {
         }
     }
 
-    /// Two hands pinch at `start` and move apart (factor > 1) or together (< 1).
-    public static func twoHandZoom(start: Double = 0.4, moveDuration: Double = 0.6,
-                                   spreadChange: Double = 0.12, fps: Double = 30) -> [TrackingFrame] {
-        let end = start + 0.15 + moveDuration + 0.2
-        return generate(duration: end + 0.6, fps: fps) { t in
-            let u = clamp01((t - start - 0.15) / moveDuration)
+    /// Rest the pointing hand (the cursor locks after 1 s), then wiggle left-right-left at
+    /// `wiggleAt`: a click.
+    public static func wiggleClick(wiggleAt: Double = 2.0, fps: Double = 30) -> [TrackingFrame] {
+        generate(duration: wiggleAt + 2, fps: fps) { t in
+            let u = (t - wiggleAt) / 0.18
+            let along = u <= 0 || u >= 3 ? (u >= 3 ? 1.0 : 0.0) : (Int(u) % 2 == 0 ? u - Double(Int(u)) : 1 - (u - Double(Int(u))))
+            return [.pointing(tipAt: Point2(0.5 - 0.06 * along, 0.45))]
+        }
+    }
+
+    /// Rest, make a fist at `fistAt`, move it by `offset` (image units) a moment later, rest,
+    /// then open it: a drag and drop.
+    public static func fistDrag(fistAt: Double = 2.0, offset: Point2 = Point2(-0.1, 0.05),
+                                fps: Double = 30) -> [TrackingFrame] {
+        let open = fistAt + 3
+        return generate(duration: open + 1.5, fps: fps) { t in
+            var hand = SyntheticHand.pointing(tipAt: Point2(0.5, 0.45))
+            hand.wrist += offset * clamp01((t - fistAt - 0.5) / 0.5)
+            if t >= fistAt && t < open { hand.makeFist() }
+            return [hand]
+        }
+    }
+
+    /// Two fists from `start`, then (from `start + 0.4`, over 0.5 s) spreading apart by
+    /// `spreadChange` (> 0 zooms in, < 0 out) and both moving by `shift` (image units: scroll),
+    /// then resting.
+    public static func twoFists(start: Double = 0.5, spreadChange: Double = 0.12, shift: Point2 = .zero,
+                                fps: Double = 30) -> [TrackingFrame] {
+        generate(duration: start + 2.5, fps: fps) { t in
+            let u = clamp01((t - start - 0.4) / 0.5)
             let half = 0.12 + spreadChange / 2 * u
-            var right = SyntheticHand.pointing(tipAt: Point2(0.5 - half, 0.45))
-            var left = SyntheticHand.pointing(tipAt: Point2(0.5 + half, 0.45))
+            let center = Point2(0.5, 0.45) + shift * u
+            var right = SyntheticHand.pointing(tipAt: Point2(center.x - half, center.y))
+            var left = SyntheticHand.pointing(tipAt: Point2(center.x + half, center.y))
             left.chirality = .left
-            left.wrist = left.wristPlacing(indexTipAt: Point2(0.5 + half, 0.45))
-            let amount = tapAmount(at: t, start: start, duration: end - start)
-            right.pinchAmount = amount
-            left.pinchAmount = amount
+            left.wrist = left.wristPlacing(indexTipAt: Point2(center.x + half, center.y))
+            if t >= start {
+                right.makeFist()
+                left.makeFist()
+            }
             return [right, left]
         }
     }

@@ -3,8 +3,8 @@ import AppKit
 import GestureCore
 import QuartzCore
 
-/// The 20-second calibration: point at each corner of the screen (highlighted in turn), then
-/// pinch three times. Produces a `CalibrationProfile` for one display. Esc skips at any point
+/// The 15-second calibration: point at each corner of the screen (highlighted in turn).
+/// Produces a `CalibrationProfile` for one display. Esc skips at any point
 /// and keeps whatever was there before (defaults if never calibrated).
 @MainActor
 final class CalibrationController {
@@ -17,8 +17,6 @@ final class CalibrationController {
     private let window: KeyableWindow
     private let view: CalibrationView
     private var corners = CornerCalibrationSession()
-    private var pinch = PinchCalibrationSession()
-    private var cornerProfile: CalibrationProfile?
     private var finished = false
     var onFinish: ((Outcome) -> Void)?
 
@@ -47,28 +45,11 @@ final class CalibrationController {
     func handle(_ frame: TrackingFrame) {
         guard !finished else { return }
         let hand = frame.hands.first
-        if let profile = cornerProfile {
-            let status = pinch.process(pinchDistance: hand?.pinchDistanceNormalized(.index), at: frame.timestamp)
-            switch status {
-            case .collecting(let seen):
-                view.showPinch(seen: seen, handVisible: hand != nil)
-            case let .finished(enter, exit):
-                var result = profile
-                result.pinchEnter = enter
-                result.pinchExit = exit
-                finish(.calibrated(result))
-            case .failed:
-                // Corners are good; keep default pinch thresholds.
-                finish(.calibrated(profile))
-            }
-            return
-        }
         switch corners.process(fingertip: hand?[.indexTip], at: frame.timestamp) {
         case let .collecting(corner, progress):
             view.showCorner(corner, progress: progress, handVisible: hand != nil)
         case .finished(let profile):
-            cornerProfile = profile
-            view.showPinch(seen: 0, handVisible: hand != nil)
+            finish(.calibrated(profile))
         case .failed(let reason):
             finish(.cornersFailed(reason))
         }
@@ -108,7 +89,6 @@ final class CalibrationView: NSView {
     private let targetProgress = CAShapeLayer()
     private let title = NSTextField(labelWithString: "")
     private let detail = NSTextField(labelWithString: "")
-    private let dots = CAShapeLayer()
     private var currentCorner = -1
     private let inset: CGFloat = 56
     private let radius: CGFloat = 26
@@ -145,11 +125,6 @@ final class CalibrationView: NSView {
         targetProgress.lineCap = .round
         targetProgress.strokeEnd = 0
         layer?.addSublayer(targetProgress)
-
-        dots.fillColor = Theme.accent.cgColor
-        dots.strokeColor = NSColor.white.withAlphaComponent(0.6).cgColor
-        dots.lineWidth = 1.5
-        layer?.addSublayer(dots)
 
         title.font = Theme.rounded(30, weight: .semibold)
         title.textColor = .white
@@ -195,7 +170,6 @@ final class CalibrationView: NSView {
         CATransaction.setDisableActions(index == currentCorner)
         target.isHidden = false
         targetProgress.isHidden = false
-        dots.isHidden = true
         target.position = cornerPoint(index)
         targetProgress.position = cornerPoint(index)
         targetProgress.strokeEnd = CGFloat(progress)
@@ -208,33 +182,9 @@ final class CalibrationView: NSView {
             : "Raise your hand so the camera can see it.   Esc to skip"
     }
 
-    func showPinch(seen: Int, handVisible: Bool) {
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        target.isHidden = true
-        targetProgress.isHidden = true
-        dots.isHidden = false
-        let path = CGMutablePath()
-        let spacing: CGFloat = 34
-        let r: CGFloat = 9
-        let baseY = bounds.midY - 90
-        for i in 0..<3 {
-            let x = bounds.midX + CGFloat(i - 1) * spacing
-            let rect = CGRect(x: x - r, y: baseY - r, width: r * 2, height: r * 2)
-            if i < seen { path.addEllipse(in: rect) } else { path.addEllipse(in: rect.insetBy(dx: 4, dy: 4)) }
-        }
-        dots.path = path
-        CATransaction.commit()
-        title.stringValue = "Now pinch three times"
-        detail.stringValue = handVisible
-            ? "Touch thumb and index finger together, then open.   Esc to skip"
-            : "Raise your hand so the camera can see it.   Esc to skip"
-    }
-
     func showMessage(_ text: String, detail message: String) {
         target.isHidden = true
         targetProgress.isHidden = true
-        dots.isHidden = true
         title.stringValue = text
         detail.stringValue = message
     }

@@ -17,14 +17,14 @@ final class CalibrationTests: XCTestCase {
     func testDegenerateQuadIsRejected() {
         let collinear = [Point2(0.1, 0.1), Point2(0.2, 0.2), Point2(0.3, 0.3), Point2(0.4, 0.4)]
         XCTAssertNil(Homography.solve(from: collinear, to: [Point2(0, 0), Point2(1, 0), Point2(1, 1), Point2(0, 1)]))
-        XCTAssertFalse(CalibrationProfile(corners: collinear, pinchEnter: 0.35, pinchExit: 0.5, isCalibrated: true).isUsable)
+        XCTAssertFalse(CalibrationProfile(corners: collinear, isCalibrated: true).isUsable)
         // Corners captured in the wrong order make a bow-tie: not convex.
         let bowTie = [skewedCorners[0], skewedCorners[2], skewedCorners[1], skewedCorners[3]]
-        XCTAssertFalse(CalibrationProfile(corners: bowTie, pinchEnter: 0.35, pinchExit: 0.5, isCalibrated: true).isUsable)
+        XCTAssertFalse(CalibrationProfile(corners: bowTie, isCalibrated: true).isUsable)
     }
 
     func testCalibratedCornersHitScreenCorners() {
-        let profile = CalibrationProfile(corners: skewedCorners, pinchEnter: 0.35, pinchExit: 0.5, isCalibrated: true)
+        let profile = CalibrationProfile(corners: skewedCorners, isCalibrated: true)
         XCTAssertTrue(profile.isUsable)
         let mapper = ActiveBoxMapper(profile: profile)
         let display = DisplayInfo(id: "ext", frame: Rect(x: 1728, y: -200, width: 2560, height: 1440))
@@ -86,41 +86,6 @@ final class CalibrationTests: XCTestCase {
         }
         guard case .failed = status else { return XCTFail("expected timeout, got \(status)") }
     }
-
-    func testPinchCalibrationAdaptsThresholds() {
-        var session = PinchCalibrationSession()
-        var status = PinchCalibrationSession.Status.collecting(pinchesSeen: 0)
-        // A user whose pinch closes to 0.25 and opens to 1.2.
-        for i in 0..<200 {
-            let phase = Double(i % 30) / 30
-            let d = phase < 0.4 ? 0.25 : 1.2
-            status = session.process(pinchDistance: d, at: Double(i) / 30)
-            if case .finished = status { break }
-        }
-        guard case let .finished(enter, exit) = status else { return XCTFail("\(status)") }
-        XCTAssertGreaterThan(enter, 0.25)
-        XCTAssertLessThan(enter, 0.6)
-        XCTAssertGreaterThan(exit, enter + 0.07)
-    }
-
-    func testCalibratedPinchThresholdsReachDetector() {
-        var profile = CalibrationProfile.defaultProfile()
-        profile.isCalibrated = true
-        profile.pinchEnter = 0.2
-        profile.pinchExit = 0.3
-        let machine = PointerStateMachine(config: .pose, displays: [testDisplay],
-                                          calibration: CalibrationSet(profiles: ["main": profile]))
-        _ = machine.setEngaged(true, at: 0)
-        // A half pinch (~0.4 normalized) would click with defaults? No: 0.4 > 0.35. Use a
-        // three-quarter pinch around 0.27: clicks with defaults, not with the tighter profile.
-        let frames = SyntheticStream.generate(duration: 1.5) { t in
-            var h = SyntheticHand.pointing(tipAt: Point2(0.5, 0.45))
-            h.pinchAmount = (t > 0.5 && t < 0.7) ? 0.86 : 0
-            return [h]
-        }
-        XCTAssertEqual(drive(machine, frames).clicks.count, 0)
-        XCTAssertEqual(drive(engagedMachine(), frames).clicks.count, 1)
-    }
 }
 
 final class DisplayRouterTests: XCTestCase {
@@ -158,7 +123,7 @@ final class DisplayRouterTests: XCTestCase {
     }
 
     func testMachineJumpsDisplayWhenHeldAtEdge() {
-        var config = GestureConfig.pose
+        var config = GestureConfig()
         config.stayOnEngagedDisplay = false   // edge jumps are only on when not locked
         let machine = engagedMachine(config, displays: [left, right])
         // Hold the finger far to the user's right (camera's left) for a second.

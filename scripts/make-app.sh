@@ -10,9 +10,9 @@
 #   COMMIT               the commit it was built from (default: git HEAD, if this is a checkout)
 #   BRANCH               the branch the in-app updater follows (default: main)
 #   UNIVERSAL=1          arm64 + x86_64 (CI); default builds only this Mac's architecture
-#   WISP_SIGN_IDENTITY   a code-signing identity from your keychain. Optional: with one, macOS
-#                        keeps the Camera/Accessibility permissions across updates; without one
-#                        the app is ad-hoc signed and macOS may ask again after an update.
+#   WISP_SIGN_IDENTITY   a code-signing identity from your keychain. Optional: without one the app
+#                        is ad-hoc signed with a designated requirement of just its bundle
+#                        identifier, so macOS keeps the Camera/Accessibility grants across updates.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -74,9 +74,16 @@ if [ -n "${WISP_SIGN_IDENTITY:-}" ]; then
   echo "==> signing with \"$WISP_SIGN_IDENTITY\""
   codesign --force --sign "$WISP_SIGN_IDENTITY" --timestamp=none "$APP"
 else
-  echo "==> ad-hoc signing"
-  codesign --force --sign - --timestamp=none "$APP"
+  # An ad-hoc signature's default designated requirement is the binary's hash, which changes with
+  # every build; macOS stores it with the Accessibility grant, so each update looked like a new app
+  # (the switch stayed on but stopped working until removed and re-added). Requiring only the
+  # bundle identifier keeps the grant valid across builds.
+  BUNDLE_ID="$($PB -c 'Print CFBundleIdentifier' "$APP/Contents/Info.plist")"
+  echo "==> ad-hoc signing ($BUNDLE_ID, identifier-only requirement)"
+  codesign --force --sign - --timestamp=none --identifier "$BUNDLE_ID" \
+    --requirements "=designated => identifier \"$BUNDLE_ID\"" "$APP"
 fi
+codesign --display --requirements - "$APP" 2>&1 | sed -n 's/^designated => /==> designated requirement: /p' || true
 codesign --verify --verbose=1 "$APP"
 
 ditto -c -k --keepParent "$APP" "build/$NAME.zip"

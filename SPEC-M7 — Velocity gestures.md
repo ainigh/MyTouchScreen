@@ -1,5 +1,9 @@
 # SPEC-M7 — Velocity gestures
 
+> **Removed (Oct 2026, owner request):** Velocity mode, its `tune` tool and the guided recording
+> were taken out with every other way of clicking except the lock-then-wiggle click. Kept for
+> history; see DECISIONS.md.
+
 This amendment adds a second input model, **Velocity mode**, alongside the existing pinch-based
 model (now called **Pose mode**). Velocity mode becomes the default once its acceptance tests
 pass. Pose mode stays selectable in Settings. Everything else in `SPEC.md` still applies.

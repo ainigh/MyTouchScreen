@@ -1,12 +1,11 @@
-# Wisp — point at your Mac, hold still to click
+# Wisp — point at your Mac, rest and wiggle to click
 
 Wisp is a menu-bar app that turns your Mac's camera into a touch-free pointing device.
-Point your right index finger at the screen and a soft halo follows it. By default (*Hold &
-wiggle*) every movement moves the cursor, holding still for 2 seconds clicks, wiggling your
-hand back and forth scrolls, and raising your left hand turns movement into a drag (lower it to
-drop; wiggle with it up to zoom). Two other input models are one switch away in Settings: *Velocity*
-(tap the air to click, flick to scroll) and *Pose* (pinch to click, fist to scroll). It
-generates real system input, so it works in every app.
+Point your right index finger at the screen and a soft halo follows it. Rest for a second and
+the cursor locks in place; then wiggle your finger to click there, or make a fist to grab and
+drag (open it to drop). Two fists zoom and scroll. That wiggle is the only way Wisp clicks, so
+ordinary hand movement never clicks anything by accident. It generates real system input, so
+it works in every app.
 
 Everything runs on the Mac: Apple's Vision framework finds 21 points on your hand, and no
 video is stored or sent anywhere.
@@ -63,12 +62,15 @@ paste to Claude Code.
 GitHub Actions (`.github/workflows/build.yml`) tests and builds every push, and publishes a
 release (`v1.0.<run number>`, with `GesturePointer.zip`) for every push to `main`.
 
-**Permissions after an update.** The app is ad-hoc signed, so macOS treats each new build as a
-new app and may ask for Camera and Accessibility again; Wisp's Setup window comes up when it
-needs them. If Accessibility is already switched on but Wisp still asks, remove GesturePointer
-from the list with **−** and turn it on again. To keep permissions across updates, sign with your
-own certificate: create a "Code Signing" certificate in Keychain Access (Certificate Assistant →
-Create a Certificate…, type *Code Signing*), then run
+**Permissions after an update.** The app is ad-hoc signed with a requirement of just its bundle
+identifier (`app.wisp.GesturePointer`), so macOS keeps the Camera and Accessibility grants
+across updates. (Builds before this change were tied to their exact binary, which is why the
+Accessibility switch could look on but not work until removed and re-added.) If that ever
+happens anyway, Wisp notices on launch that an earlier build was trusted and this one isn't,
+clears its own stale entry and asks again, so you only turn the switch on; the Setup window's
+*Open Accessibility Settings* button does the same. To sign with your own certificate instead,
+create a "Code Signing" certificate in Keychain Access (Certificate Assistant → Create a
+Certificate…, type *Code Signing*), then run
 `defaults write app.wisp.GesturePointer signIdentity "THE CERTIFICATE NAME"` once. Updates built
 on your Mac are then signed with it.
 
@@ -97,8 +99,8 @@ Wisp needs two permissions and asks for them in order in its Setup window:
    if clicks stop working, remove the entry with `−` and turn it on again when Wisp asks (see
    Updates).
 
-Then pick a camera and either **Calibrate** (20 seconds: point at each corner as it lights up,
-then pinch three times) or **Skip** to use a sensible default area. You can calibrate any
+Then pick a camera and either **Calibrate** (15 seconds: point at each corner as it lights up)
+or **Skip** to use a sensible default area. You can calibrate any
 time from the menu bar (*Calibrate This Display…*); each display keeps its own calibration.
 
 ## Turning it on and off
@@ -115,7 +117,7 @@ Standby note: while disengaged with "Both open palms toggle Wisp" enabled, the c
 green light too) and Wisp looks at a few frames per second for your palms, using almost no CPU.
 Turn that setting off to stop the camera whenever Wisp is disengaged and use the shortcut.
 
-## Gesture cheat sheet — Hold & wiggle (default)
+## Gesture cheat sheet
 
 Your **right hand** points. The left hand only joins in for two-hand gestures.
 
@@ -138,95 +140,20 @@ point.
 Notes: only the **last stroke before you rest** counts for two fists — close them, widen them,
 rest: zoom in again (a ratchet, like lifting a mouse). Raise-then-lower and rest scrolls down.
 The cursor stays put during two-fist gestures. Engaging never clicks by itself, and resting
-never clicks — only a wiggle does. There's no right click in this model. With two monitors the
+never clicks — **only a wiggle does**: pinches, taps, flicks and hovering never click.
+There's no right click. With two monitors the
 cursor stays on the monitor the mouse pointer was on when Wisp engaged (Settings → Pointer).
 Wiggling the index finger works as well as wiggling the whole hand.
 Left-handed? Settings → Gestures → *Pointing hand: Left* swaps the roles.
 
-## Gesture cheat sheet — Velocity mode
-
-No finger pose needed: Wisp watches how fast and how far your whole hand moves. Tiny or slow
-movements just move the cursor; only short, quick taps and long, fast flicks do something.
-
-| Gesture | Action |
-|---|---|
-| Point and move | Cursor follows the fingertip, live, even during flicks |
-| Hold still a moment, then one quick tap down and back | Left click — where the cursor was before the tap |
-| Two quick taps | Double click |
-| Quick tap sideways | Right click (Settings can swap axes or make any tap a left click) |
-| Long, fast flick up / down | Scroll, with momentum; the cursor snaps back to where the flick started |
-| Flick sideways and back | Horizontal scroll |
-| Tap, then move within ⅓ s | Drag from the tap; hold still ½ s (or tap again) to drop |
-| Both hands moving apart / together quickly | Zoom in / out |
-| Open palm held still | Engage / disengage (the one pose Velocity mode uses) |
-
-Tips: a tap is short — like tapping a table, a few centimetres, out and back in about 0.15 s —
-and starts from a still hand. Moving the pointer quickly up or down at full speed scrolls; move
-diagonally or a bit slower to reposition. A new flick stops a scroll glide immediately. If a
-gesture doesn't do what you expect, turn on the "why not?" readout (Settings → Gestures) and see
-`tools/tune.md`.
-
-## Gesture cheat sheet — Pose mode
-
-Settings → Gestures → Input model → **Pose (pinch)**.
-
-```
-  POINT  — cursor follows        PINCH (tap) — click            PINCH twice — double click
-                                                                 quickly
-      |                              _                               _    _
-      |                             ( )                             ( )  ( )
-    __|__                          /_ \__                          /_ \ /_ \
-   |  ___|                         |  ___|                          tap  tap
-   | |___|                         | |___|
-   |_____|                         |_____|
-
-  PINCH + HOLD, move — drag      THUMB + MIDDLE — right click    FIST + move — scroll
-                                                                 (let go while moving
-     _ ~ ~ ~ ~ ~>                     |                           for momentum)
-    ( )   hold 1/4 s                 _|                               ____
-   /_ \__                           ( )|                             |####|  ^
-   |  ___|                         /_ \|_                            |####|  |
-   | |___|                         |  ___|                           |____|  v
-   |_____|                         |_____|
-
-  BOTH HANDS PINCH,              OPEN PALM, hold still —         THUMB + RING — app switcher
-  move apart/together — zoom     engage / disengage              (off by default)
-
-   <- ( )        ( ) ->            | | | |
-       /_\      /_\                | | | |  /
-                                   |       /
-                                   |_______|
-```
-
-| Gesture | Action |
-|---|---|
-| Index finger pointing | Cursor follows the fingertip (smoothed, calibrated, mirrored) |
-| Thumb + index pinch, quick | Left click |
-| Two quick pinches | Double click |
-| Pinch and hold ¼ s (or pinch and move) | Drag; open to drop |
-| Thumb + middle pinch | Right click |
-| Fist, then move | Scroll both ways; release while moving for momentum |
-| Both hands pinching, move apart / together | Zoom in / out |
-| Open palm held still | Engage / disengage |
-| Thumb + ring pinch, slide sideways | ⌘⇥ app switcher (enable in Settings) |
-| Hand held at a screen edge for 0.4 s | Move to the next display |
-| Hover still (optional) | Dwell click (enable in Settings) |
-
-Tips: keep your hand about an arm's length from the camera, in front of you rather than in
-front of your face. Pinch firmly and briefly. Clicks land where you were pointing just before
-your fingers started closing, so you don't need to hold perfectly still.
-
 ## The overlay
 
-- **Velocity mode:** during a flick a short trail runs from where it started; when it's
-  classified, a flash appears there — a ripple for a click, a double ripple for a double click,
-  a ring for a right click, an arrow for the scroll direction. The optional **"why not?"
-  readout** (bottom-left) shows the last flick's duration, distance, path, peak speed, axis and
-  the rule that decided.
-- **Halo** around the cursor, colour-coded: teal = pointing, amber = fingers closing (the inner
-  ring fills as the pinch closes), violet = dragging, blue = scrolling, rose = zooming.
-- **Outer ring** fills during a palm hold (engage/disengage) or a dwell click; in Hold & wiggle it
-  fills as the cursor settles, stays full while locked and drains through the second after you move.
+- **Halo** around the cursor, colour-coded: teal = pointing, violet with a centre dot = fist
+  drag, rose with a centre dot = two fists.
+- **Outer ring** fills during the two-palm hold (engage/disengage); while pointing it fills as
+  the cursor settles, stays full while locked and drains through the second after you move —
+  wiggle or make a fist before it empties.
+- **Ripple** where a wiggle clicked (a double ripple for a double click).
 - **Edge glow** while you hold the cursor against an edge to jump displays.
 - **Toasts** at the top of the screen for state changes ("Engaged", "Standing by", "Camera
   paused", "Accessibility permission needed").
@@ -243,15 +170,11 @@ Menu bar → *Settings…*
   edge jumps between displays), *Active area* (how much hand movement covers the screen), *Steadiness* and
   *Responsiveness* (the 1€ filter's min cutoff and beta), *Rest lock* (how firmly a still cursor
   holds), *Precision* (slow movements are scaled down for fine targeting).
-- **Gestures:** *Input model* (Hold & wiggle / Velocity / Pose). Hold & wiggle: how long a rest locks the cursor and
-  how long it stays locked after you move, how still is still, the click wiggle (changes of
-  direction, within how long, smallest stroke), the double-click window, and for two fists the
-  smallest stroke, rest time and zoom strength; scroll speed and direction. Velocity: which tap direction is the left
-  click, right click and drag on/off, scroll gain and momentum, scroll direction (follows the
-  system by default), the "why not?" readout, and an *Advanced* section with every Velocity
-  threshold plus *Reset to tuned defaults*. Pose: pinch thresholds, hold-to-drag time, scroll speed and direction, momentum,
-  zoom on/off and how zoom is sent (⌘+/⌘− keys, or ⌘+scroll), app switcher, dwell click,
-  palm-to-engage, which hand points.
+- **Gestures:** how long a rest locks the cursor and how long it stays locked after you move,
+  how still is still, the click wiggle (changes of direction, within how long, smallest stroke),
+  the double-click window; for two fists the smallest stroke, rest time and zoom strength;
+  scroll speed and direction (follows the system by default), how zoom is sent (⌘+/⌘− keys, or
+  ⌘+scroll), two-palm engage, which hand points.
 - **Camera:** device (automatic prefers an iPhone), resolution (720p recommended), preview,
   skeleton, calibration.
 - **General:** shortcut, sounds, status dot, launch at login, export/import settings as JSON,
@@ -265,23 +188,21 @@ frame rate and Vision's speed for 5 seconds, and lists anything wrong.
 
 | Problem | Fix |
 |---|---|
-| Halo moves but nothing clicks or moves | Accessibility isn't granted to *this build* of GesturePointer.app. Toggle it off/on in System Settings → Privacy & Security → Accessibility. |
+| Halo moves but nothing clicks or moves | Accessibility isn't granted to *this build* of GesturePointer.app. Menu → *Setup & Permissions…* → *Open Accessibility Settings* (it clears the stale entry), then turn GesturePointer on. |
 | Menu-bar icon shows a warning triangle | A permission is missing: menu → *Setup & Permissions…* |
 | Cursor shimmers | Better light on your hand; Settings → Pointer → lower *Steadiness* or raise *Rest lock*. |
 | Cursor feels sluggish | Raise *Responsiveness*; check `make doctor` shows ≥ 30 fps. |
-| Velocity: taps missed, or moving the pointer clicks/scrolls | Turn on the "why not?" readout (Settings → Gestures), reproduce it, and paste the readout to Claude Code — or record a guided session (`tools/tune.md`). |
-| Pose: clicks fire by themselves / are missed | Re-run *Calibrate This Display…* (it learns your pinch), or adjust *Pinch closes at*. |
+| Wiggles don't click, or clicks happen by themselves | Settings → Gestures: raise or lower *Click wiggle: smallest stroke* / *changes of direction*. Better still, record a session (below) and send it. |
 | Can't reach screen corners | Calibrate, or lower *Active area*. |
 | Shortcut does nothing | Another app owns it; pick another in Settings → General. |
 | An update failed | Menu → **Copy Update Details**, paste it to Claude Code. Or rerun the install line. |
-| Need help tuning | Record a guided session (`--record session.json --script`, see `tools/tune.md`) and send the file. |
+| Need help tuning | Record a minute of use (`--record session.json`) and send the file: `gesture-replay` replays it on any computer. |
 
 Command-line flags (run the binary inside the bundle,
 `~/Applications/GesturePointer.app/Contents/MacOS/GesturePointer`):
 
 ```
 --record <file.json>   record the hand-landmark stream while running
---script               with --record: guided tuning session (prompts + labeled segments)
 --replay <file.json>   drive the app from a recording instead of the camera, then quit
 --dry-run              with --replay: print intents instead of moving the cursor
 --no-overlay           no overlay; print one line per camera frame (fps, landmarks)
@@ -304,16 +225,15 @@ macOS. If `make app` fails on your Mac anyway:
 ## How it's built
 
 ```
-Sources/GestureCore/        Foundation-only gesture engine (filters, calibration,
+Sources/GestureCore/        Foundation-only gesture engine (filters, calibration, pose
                             classifier, state machine, replay, sound synthesis) — tested on Linux
 Sources/GesturePointerApp/  macOS shell: camera, Vision, CGEvent input, overlay, menu, settings
 Sources/GestureReplay/      gesture-replay: run a recording through the engine on any OS
-Sources/Tune/               tune: confusion matrix + grid search over a labeled recording
-recordings/                 labeled sessions the tests replay (see tools/tune.md)
+recordings/                 real sessions the tests replay
 Tests/GestureCoreTests/     `swift test`
 install.sh                  one-line install (release, or build from source), with rollback
 scripts/make-app.sh         bundle + sign + zip (CI, the installer and the updater all use it)
-tools/check.sh, tools/tune.md
+tools/check.sh
 ```
 
 Design decisions and every tuned threshold, with reasons, are in `DECISIONS.md`.

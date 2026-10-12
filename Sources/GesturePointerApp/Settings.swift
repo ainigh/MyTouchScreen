@@ -23,7 +23,6 @@ final class AppSettings: ObservableObject {
         static let onboarded = "hasCompletedOnboarding"
         static let enabled = "enabled"
         static let previewCorner = "previewCorner"
-        static let showWhyNot = "showWhyNot"
         static let scrollFollowsSystem = "scrollFollowsSystem"
     }
 
@@ -46,8 +45,6 @@ final class AppSettings: ObservableObject {
     @Published var enabled: Bool { didSet { defaults.set(enabled, forKey: Keys.enabled); changed() } }
     /// 0 top-left, 1 top-right, 2 bottom-right, 3 bottom-left.
     @Published var previewCorner: Int { didSet { defaults.set(previewCorner, forKey: Keys.previewCorner); changed() } }
-    /// Velocity mode debug readout: the last segment's numbers and the rule that fired.
-    @Published var showWhyNot: Bool { didSet { defaults.set(showWhyNot, forKey: Keys.showWhyNot); changed() } }
     /// Scroll direction follows System Settings → Trackpad/Mouse → Natural scrolling.
     @Published var scrollFollowsSystem: Bool { didSet { defaults.set(scrollFollowsSystem, forKey: Keys.scrollFollowsSystem); changed() } }
 
@@ -66,7 +63,6 @@ final class AppSettings: ObservableObject {
         hasCompletedOnboarding = defaults.bool(forKey: Keys.onboarded)
         enabled = defaults.object(forKey: Keys.enabled) as? Bool ?? true
         previewCorner = defaults.object(forKey: Keys.previewCorner) as? Int ?? 3
-        showWhyNot = defaults.object(forKey: Keys.showWhyNot) as? Bool ?? false
         scrollFollowsSystem = defaults.object(forKey: Keys.scrollFollowsSystem) as? Bool ?? true
     }
 
@@ -112,7 +108,6 @@ final class AppSettings: ObservableObject {
         showStatusGlyph = true
         zoomStyle = .keyboard
         hotkey = .default
-        showWhyNot = false
         scrollFollowsSystem = true
     }
 
@@ -126,7 +121,6 @@ final class AppSettings: ObservableObject {
             "soundsEnabled": soundsEnabled,
             "showStatusGlyph": showStatusGlyph,
             "zoomStyle": zoomStyle.rawValue,
-            "showWhyNot": showWhyNot,
             "scrollFollowsSystem": scrollFollowsSystem,
             "hotkey": ["keyCode": hotkey.keyCode, "modifiers": hotkey.modifiers],
         ]
@@ -159,7 +153,6 @@ final class AppSettings: ObservableObject {
             if let v = app["soundsEnabled"] as? Bool { soundsEnabled = v }
             if let v = app["showStatusGlyph"] as? Bool { showStatusGlyph = v }
             if let v = app["zoomStyle"] as? String, let z = ZoomStyle(rawValue: v) { zoomStyle = z }
-            if let v = app["showWhyNot"] as? Bool { showWhyNot = v }
             if let v = app["scrollFollowsSystem"] as? Bool { scrollFollowsSystem = v }
             if let h = app["hotkey"] as? [String: Any],
                let code = (h["keyCode"] as? NSNumber)?.uint32Value,
@@ -185,7 +178,7 @@ struct SettingsView: View {
             PointerSettings(settings: settings)
                 .tabItem { Label("Pointer", systemImage: "cursorarrow.motionlines") }
             GestureSettings(settings: settings)
-                .tabItem { Label("Gestures", systemImage: "hand.pinch") }
+                .tabItem { Label("Gestures", systemImage: "hand.wave") }
             CameraSettings(settings: settings, cameras: cameras, onCalibrate: onCalibrate)
                 .tabItem { Label("Camera", systemImage: "camera") }
             GeneralSettings(settings: settings, launchAtLogin: launchAtLogin,
@@ -265,96 +258,48 @@ private struct PointerSettings: View {
 private struct GestureSettings: View {
     @ObservedObject var settings: AppSettings
 
-    private var model: InputModel { settings.config.inputModel }
-    private var isVelocity: Bool { model == .velocity }
-
-    private var modelHelp: String {
-        switch model {
-        case .dwellShake:
-            return "Point with your right hand. Hold still for a second and the cursor locks; it stays put for a second after you move again. In that second: wiggle (left-right-left) to click where it is locked, wiggle twice to double-click, or make a fist to press and drag; open the fist to drop. Both hands as fists: spread them apart and rest to zoom in, bring them together and rest to zoom out, move both the same way and rest to scroll. Only the last stroke before you rest counts, so close-then-widen repeats a zoom in. Both open palms turn Wisp on and off."
-        case .velocity:
-            return "Your hand is the mouse: a quick tap from a still hand clicks, a long flick scrolls, tap then move drags."
-        case .pose:
-            return "Pinch thumb and index to click, hold the pinch to drag, make a fist and move to scroll."
-        }
-    }
+    private let help = "Point with your right hand. Hold still for a second and the cursor locks; it stays put for a second after you move again. In that second: wiggle (left-right-left) to click where it is locked, wiggle twice to double-click, or make a fist to press and drag; open the fist to drop. Both hands as fists: spread them apart and rest to zoom in, bring them together and rest to zoom out, move both the same way and rest to scroll. Only the last stroke before you rest counts, so close-then-widen repeats a zoom in. Both open palms turn Wisp on and off. Nothing else clicks."
 
     var body: some View {
         Form {
-            Section("Input model") {
-                Picker("Click and scroll with", selection: $settings.config.inputModel) {
-                    Text("Hold & wiggle").tag(InputModel.dwellShake)
-                    Text("Velocity (flick)").tag(InputModel.velocity)
-                    Text("Pose (pinch)").tag(InputModel.pose)
-                }
-                .pickerStyle(.segmented)
-                Text(modelHelp)
+            Section("How it works") {
+                Text(help)
                     .font(.caption).foregroundStyle(.secondary)
             }
-            switch model {
-            case .dwellShake:
-                Section("Hold & wiggle") {
-                    ValueSlider(title: "Hold still to lock the cursor", value: $settings.config.shake.lockTime,
-                                range: 0.4...3.0, format: "%.1f s")
-                    ValueSlider(title: "Locked after moving again", value: $settings.config.shake.wakeTime,
-                                range: 0.5...2.0, format: "%.1f s",
-                                help: "How long the cursor stays put once the hand moves again. Wiggle within this time to click, or make a fist to drag.")
-                    ValueSlider(title: "Still means within", value: $settings.config.shake.dwellRadiusBox,
-                                range: 0.003...0.03, format: "%.3f",
-                                help: "Fraction of the screen width the cursor may wander while you hold still.")
-                    Stepper("Click wiggle: \(settings.config.shake.reversals) changes of direction",
-                            value: $settings.config.shake.reversals, in: 1...5)
-                    ValueSlider(title: "Click wiggle: within", value: $settings.config.shake.window,
-                                range: 0.5...2.0, format: "%.2f s")
-                    ValueSlider(title: "Click wiggle: smallest stroke", value: $settings.config.shake.minStroke,
-                                range: 0.1...1.0, format: "%.2f × hand",
-                                help: "Shorter back-and-forth movements are ignored, so a shaky hand never clicks.")
-                    ValueSlider(title: "Double click: second wiggle within", value: $settings.config.shake.doubleClickWindow,
-                                range: 0.5...3.0, format: "%.1f s")
-                }
-                Section("Two fists: zoom and scroll") {
-                    ValueSlider(title: "Smallest stroke", value: $settings.config.shake.twoHandStroke,
-                                range: 0.1...1.0, format: "%.2f × hand",
-                                help: "How far the fists must spread, close or move together before resting for it to zoom or scroll.")
-                    ValueSlider(title: "Rest for", value: $settings.config.shake.twoHandRestTime,
-                                range: 0.1...1.0, format: "%.2f s")
-                    ValueSlider(title: "Zoom strength", value: $settings.config.shake.zoomGain,
-                                range: 0.5...3.0, format: "%.1f×")
-                    Button("Reset Hold & wiggle to defaults") { settings.config.shake = ShakeParams() }
-                }
-                Section("Scroll") {
-                    ValueSlider(title: "Scroll speed", value: $settings.config.scrollSpeed, range: 0.25...4, format: "%.2f×")
-                    ScrollDirectionToggles(settings: settings)
-                }
-            case .velocity:
-                VelocityGestureSettings(settings: settings)
-            case .pose:
-                Section("Pinch") {
-                    ValueSlider(title: "Pinch closes at", value: $settings.config.pinchEnter, range: 0.15...0.5,
-                                help: "Thumb-to-finger distance (in hand sizes) that counts as a pinch. Calibration sets this per display.")
-                    ValueSlider(title: "Pinch opens at", value: $settings.config.pinchExit, range: 0.25...0.8)
-                    ValueSlider(title: "Hold to drag", value: $settings.config.dragHoldDuration,
-                                range: 0.15...0.6, format: "%.2f s")
-                }
-                Section("Scroll") {
-                    ValueSlider(title: "Scroll speed", value: $settings.config.scrollSpeed, range: 0.25...4, format: "%.2f×")
-                    ScrollDirectionToggles(settings: settings)
-                    Toggle("Momentum", isOn: $settings.config.momentumEnabled)
-                }
+            Section("Lock, click and drag") {
+                ValueSlider(title: "Hold still to lock the cursor", value: $settings.config.shake.lockTime,
+                            range: 0.4...3.0, format: "%.1f s")
+                ValueSlider(title: "Locked after moving again", value: $settings.config.shake.wakeTime,
+                            range: 0.5...2.0, format: "%.1f s",
+                            help: "How long the cursor stays put once the hand moves again. Wiggle within this time to click, or make a fist to drag.")
+                ValueSlider(title: "Still means within", value: $settings.config.shake.dwellRadiusBox,
+                            range: 0.003...0.03, format: "%.3f",
+                            help: "Fraction of the screen width the cursor may wander while you hold still.")
+                Stepper("Click wiggle: \(settings.config.shake.reversals) changes of direction",
+                        value: $settings.config.shake.reversals, in: 1...5)
+                ValueSlider(title: "Click wiggle: within", value: $settings.config.shake.window,
+                            range: 0.5...2.0, format: "%.2f s")
+                ValueSlider(title: "Click wiggle: smallest stroke", value: $settings.config.shake.minStroke,
+                            range: 0.1...1.0, format: "%.2f × hand",
+                            help: "Shorter back-and-forth movements are ignored, so a shaky hand never clicks.")
+                ValueSlider(title: "Double click: second wiggle within", value: $settings.config.shake.doubleClickWindow,
+                            range: 0.5...3.0, format: "%.1f s")
             }
-            if model != .dwellShake {
-                Section("More gestures") {
-                    Toggle(isVelocity ? "Two-hand spread to zoom" : "Two-hand pinch to zoom", isOn: $settings.config.zoomEnabled)
-                    Picker("Zoom sends", selection: $settings.zoomStyle) {
-                        ForEach(ZoomStyle.allCases, id: \.self) { Text($0.label).tag($0) }
-                    }
-                    .disabled(!settings.config.zoomEnabled)
-                    if model == .pose {
-                        Toggle("Thumb + ring pinch: app switcher (⌘⇥)", isOn: $settings.config.appSwitcherEnabled)
-                    }
-                    Toggle("Dwell to click", isOn: $settings.config.dwellClickEnabled)
-                    ValueSlider(title: "Dwell time", value: $settings.config.dwellClickDelay, range: 0.4...2.0, format: "%.2f s")
-                        .disabled(!settings.config.dwellClickEnabled)
+            Section("Two fists: zoom and scroll") {
+                ValueSlider(title: "Smallest stroke", value: $settings.config.shake.twoHandStroke,
+                            range: 0.1...1.0, format: "%.2f × hand",
+                            help: "How far the fists must spread, close or move together before resting for it to zoom or scroll.")
+                ValueSlider(title: "Rest for", value: $settings.config.shake.twoHandRestTime,
+                            range: 0.1...1.0, format: "%.2f s")
+                ValueSlider(title: "Zoom strength", value: $settings.config.shake.zoomGain,
+                            range: 0.5...3.0, format: "%.1f×")
+                Button("Reset gestures to defaults") { settings.config.shake = ShakeParams() }
+            }
+            Section("Scroll and zoom") {
+                ValueSlider(title: "Scroll speed", value: $settings.config.scrollSpeed, range: 0.25...4, format: "%.2f×")
+                ScrollDirectionToggles(settings: settings)
+                Picker("Zoom sends", selection: $settings.zoomStyle) {
+                    ForEach(ZoomStyle.allCases, id: \.self) { Text($0.label).tag($0) }
                 }
             }
             Section("Engage") {
@@ -383,102 +328,6 @@ private struct ScrollDirectionToggles: View {
             get: { settings.scrollFollowsSystem ? AppSettings.systemNaturalScrolling : settings.config.naturalScrolling },
             set: { settings.config.naturalScrolling = $0 }))
             .disabled(settings.scrollFollowsSystem)
-    }
-}
-
-/// Velocity mode: taps, scroll flicks, and every `VelocityParams` field under "Advanced".
-@MainActor
-private struct VelocityGestureSettings: View {
-    @ObservedObject var settings: AppSettings
-    @State private var showsAdvanced = false
-
-    private struct Param {
-        let title: String
-        let key: WritableKeyPath<VelocityParams, Double>
-        let range: ClosedRange<Double>
-        let format: String
-    }
-
-    /// Velocities are hand-space units per second; distances are hand sizes (× hs).
-    private static var params: [Param] {
-        [
-            Param(title: "Fast above (vEnter)", key: \.vEnter, range: 0.3...2.5, format: "%.2f /s"),
-            Param(title: "Slow below (vExit)", key: \.vExit, range: 0.1...1.5, format: "%.2f /s"),
-            Param(title: "Longest segment", key: \.maxSegment, range: 0.2...1.0, format: "%.2f s"),
-            Param(title: "Tap: longest", key: \.clickMaxDuration, range: 0.08...0.4, format: "%.2f s"),
-            Param(title: "Tap: largest displacement", key: \.clickMaxDisp, range: 0.3...2.0, format: "%.2f × hs"),
-            Param(title: "Tap: longest path", key: \.clickMaxPath, range: 0.5...3.0, format: "%.2f × hs"),
-            Param(title: "Still before a tap: below", key: \.preClickStillV, range: 0.05...0.8, format: "%.2f /s"),
-            Param(title: "Still before a tap: for", key: \.preClickStillTime, range: 0...0.3, format: "%.2f s"),
-            Param(title: "Scroll: shortest flick", key: \.scrollMinDisp, range: 0.8...4.0, format: "%.2f × hs"),
-            Param(title: "Scroll: peak speed without return", key: \.scrollMinPeak, range: 0.8...4.0, format: "%.2f /s"),
-            Param(title: "Counts as returned at", key: \.returnFraction, range: 0.1...0.9, format: "%.2f"),
-            Param(title: "Axis ratio", key: \.axisRatio, range: 1.0...4.0, format: "%.2f"),
-            Param(title: "Double click: within", key: \.doubleClickWindow, range: 0.1...0.8, format: "%.2f s"),
-            Param(title: "Double click: distance", key: \.doubleClickDisp, range: 0.1...2.0, format: "%.2f × hs"),
-            Param(title: "Drag: start within", key: \.dragStartWindow, range: 0.1...1.0, format: "%.2f s"),
-            Param(title: "Drag: moving above", key: \.dragMoveMin, range: 0.05...1.0, format: "%.2f /s"),
-            Param(title: "Drag: moving for", key: \.dragConfirmTime, range: 0.03...0.4, format: "%.2f s"),
-            Param(title: "Drop: still below", key: \.dragStillV, range: 0.02...0.5, format: "%.2f /s"),
-            Param(title: "Drop: still for", key: \.dragStillTime, range: 0.1...1.5, format: "%.2f s"),
-            Param(title: "Two hands together within", key: \.twoHandWindow, range: 0.05...0.5, format: "%.2f s"),
-            Param(title: "Coherence angle", key: \.coherenceAngle, range: 10...120, format: "%.0f°"),
-            Param(title: "Glitch jump", key: \.glitchDisp, range: 1.0...6.0, format: "%.1f × hs"),
-            Param(title: "Refractory", key: \.refractory, range: 0...0.5, format: "%.2f s"),
-            Param(title: "Minimum confidence", key: \.minConfidence, range: 0...1, format: "%.2f"),
-        ]
-    }
-
-    private func binding(_ key: WritableKeyPath<VelocityParams, Double>) -> Binding<Double> {
-        Binding(get: { settings.config.velocity[keyPath: key] },
-                set: { settings.config.velocity[keyPath: key] = $0 })
-    }
-
-    var body: some View {
-        Section("Taps") {
-            Picker("Left click is a tap", selection: $settings.config.velocity.clickAxis) {
-                Text("Up or down").tag(ClickAxis.vertical)
-                Text("Sideways").tag(ClickAxis.horizontal)
-                Text("Any direction").tag(ClickAxis.any)
-            }
-            Toggle("Cross-direction tap right-clicks", isOn: $settings.config.velocity.rightClickEnabled)
-                .disabled(settings.config.velocity.clickAxis == .any)
-            Toggle("Tap, then move to drag", isOn: $settings.config.velocity.dragEnabled)
-        }
-        Section("Scroll") {
-            ValueSlider(title: "Scroll gain", value: $settings.config.velocity.scrollGain, range: 300...2500,
-                        format: "%.0f", help: "Points per second of scroll for each unit of flick speed.")
-            ValueSlider(title: "Momentum", value: $settings.config.velocity.momentumDecay, range: 0.85...0.98,
-                        format: "%.3f", help: "Speed kept per 1/60 s while gliding. Higher glides further.")
-            ScrollDirectionToggles(settings: settings)
-        }
-        Section("Feedback") {
-            Toggle("Show “why not?” readout", isOn: $settings.showWhyNot)
-            Text("Shows the last flick's duration, distance, path, peak speed, axis and the rule that decided. Use it to report a gesture that didn't do what you expected.")
-                .font(.caption).foregroundStyle(.secondary)
-        }
-        Section {
-            DisclosureGroup("Advanced", isExpanded: $showsAdvanced) {
-                Stepper("Frames above vEnter to start: \(settings.config.velocity.framesEnter)",
-                        value: $settings.config.velocity.framesEnter, in: 1...6)
-                Stepper("Frames below vExit to end: \(settings.config.velocity.framesExit)",
-                        value: $settings.config.velocity.framesExit, in: 1...8)
-                Text("Frames are counted at 60 fps; a 30 fps camera needs half as many.")
-                    .font(.caption).foregroundStyle(.secondary)
-                ForEach(Self.params.indices, id: \.self) { index in
-                    let param = Self.params[index]
-                    ValueSlider(title: param.title, value: binding(param.key), range: param.range, format: param.format)
-                }
-                Button("Reset to tuned defaults") {
-                    var fresh = VelocityParams()
-                    // The switches above are preferences, not tuning.
-                    fresh.clickAxis = settings.config.velocity.clickAxis
-                    fresh.rightClickEnabled = settings.config.velocity.rightClickEnabled
-                    fresh.dragEnabled = settings.config.velocity.dragEnabled
-                    settings.config.velocity = fresh
-                }
-            }
-        }
     }
 }
 

@@ -27,7 +27,7 @@ func drive(_ machine: PointerStateMachine, _ frames: [TrackingFrame], tickRate: 
     return out
 }
 
-func engagedMachine(_ config: GestureConfig = .pose, displays: [DisplayInfo] = [testDisplay]) -> PointerStateMachine {
+func engagedMachine(_ config: GestureConfig = GestureConfig(), displays: [DisplayInfo] = [testDisplay]) -> PointerStateMachine {
     let machine = PointerStateMachine(config: config, displays: displays)
     _ = machine.setEngaged(true, reason: .hotkey, at: 0)
     return machine
@@ -36,9 +36,6 @@ func engagedMachine(_ config: GestureConfig = .pose, displays: [DisplayInfo] = [
 extension StepOutput {
     var clicks: [(Double, Double, Int)] {
         intents.compactMap { if case let .click(x, y, n) = $0 { return (x, y, n) } else { return nil } }
-    }
-    var rightClicks: Int {
-        intents.filter { if case .rightClick = $0 { return true } else { return false } }.count
     }
     var downs: Int { intents.filter { if case .down = $0 { return true } else { return false } }.count }
     var ups: Int { intents.filter { if case .up = $0 { return true } else { return false } }.count }
@@ -52,23 +49,5 @@ extension StepOutput {
     }
     var zooms: [(Double, ZoomPhase)] {
         intents.compactMap { if case let .zoom(f, p) = $0 { return (f, p) } else { return nil } }
-    }
-}
-
-extension GestureConfig {
-    /// The pinch/fist input model. Velocity is the app default; the Pose-mode tests use this.
-    static var pose: GestureConfig {
-        var config = GestureConfig()
-        config.inputModel = .pose
-        return config
-    }
-}
-
-extension GestureConfig {
-    /// Velocity mode (flick = tap), selectable in Settings; its tests use this.
-    static var velocityMode: GestureConfig {
-        var config = GestureConfig()
-        config.inputModel = .velocity
-        return config
     }
 }

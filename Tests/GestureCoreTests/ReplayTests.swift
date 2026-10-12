@@ -3,7 +3,7 @@ import XCTest
 
 final class ReplayTests: XCTestCase {
     func testRoundTripPreservesFramesToRecordedPrecision() throws {
-        var frames = SyntheticStream.twoHandZoom()
+        var frames = SyntheticStream.twoFists()
         frames += SyntheticStream.handLost(duration: 0.3).map { TrackingFrame(timestamp: $0.timestamp + 5, hands: $0.hands) }
         let recording = Recording(frames: frames, info: ["camera": "Synthetic"])
         let decoded = try Recording.decode(recording.encoded())
@@ -24,7 +24,13 @@ final class ReplayTests: XCTestCase {
     }
 
     func testReplayProducesSameIntentsAsLive() throws {
-        let frames = SyntheticStream.pinchTaps(at: [0.6, 0.85, 1.6])
+        let frames = SyntheticStream.wiggleClick() + SyntheticStream.fistDrag().map {
+            TrackingFrame(timestamp: $0.timestamp + 4.5, hands: $0.hands.map { hand in
+                var moved = hand
+                moved.timestamp += 4.5
+                return moved
+            })
+        }
         let live = drive(engagedMachine(), frames)
         let replayed = drive(engagedMachine(), try Recording.decode(Recording(frames: frames).encoded()).frames)
         XCTAssertEqual(live.clicks.map { $0.2 }, replayed.clicks.map { $0.2 })
@@ -68,11 +74,13 @@ final class ReplayTests: XCTestCase {
 
 final class ConfigTests: XCTestCase {
     func testLenientDecodeKeepsDefaultsForMissingKeys() throws {
-        let json = #"{"pinchEnter": 0.3, "scrollSpeed": 2.5, "someFutureKey": true}"#
+        // Old settings files carry keys of retired models (inputModel, pinchEnter, velocity…).
+        let json = #"{"inputModel": "pose", "pinchEnter": 0.3, "scrollSpeed": 2.5, "shake": {"lockTime": 1.5}, "velocity": {"vEnter": 1}}"#
         let config = try GestureConfig.decodeLenient(Data(json.utf8))
-        XCTAssertEqual(config.pinchEnter, 0.3)
         XCTAssertEqual(config.scrollSpeed, 2.5)
-        XCTAssertEqual(config.pinchExit, GestureConfig.default.pinchExit)
+        XCTAssertEqual(config.shake.lockTime, 1.5)
+        XCTAssertEqual(config.shake.wakeTime, ShakeParams().wakeTime)
+        XCTAssertEqual(config.palmThumbClearance, GestureConfig.default.palmThumbClearance)
     }
 
     func testRoundTrip() throws {

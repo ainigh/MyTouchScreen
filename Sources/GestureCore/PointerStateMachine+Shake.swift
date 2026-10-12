@@ -1,6 +1,7 @@
 import Foundation
 
-/// Hold & wiggle (the default input model).
+/// Hold & wiggle: the gestures. This is the only input model: every click is a wiggle in the
+/// wake window, so no ordinary hand movement or pose can click by accident.
 ///
 /// One hand (the pointing hand):
 /// - movement moves the cursor (it follows the index fingertip);
@@ -29,7 +30,7 @@ extension PointerStateMachine {
     /// The pointing hand and the other hand. With two hands, position decides (more reliable
     /// than Vision's chirality): the user's right hand is on the camera's left. One hand points
     /// only if it is the pointing hand by chirality, so a lone other hand never moves the cursor.
-    func assignPointerAndOther(_ hands: [HandFrame], at time: Double) -> (HandFrame?, HandFrame?, Bool) {
+    func assignPointerAndOther(_ hands: [HandFrame], at time: Double) -> (HandFrame?, HandFrame?) {
         let pointerIsLeft = config.preferredHand == .left
         var pointer: HandFrame?
         var other: HandFrame?
@@ -45,7 +46,7 @@ extension PointerStateMachine {
             primaryLastPalm = pointer.palmCenter
             primaryLastSeen = time
         }
-        return (pointer, other, false)
+        return (pointer, other)
     }
 
     /// The point the cursor follows: the index fingertip, or the palm while dragging with a fist.
@@ -115,8 +116,6 @@ extension PointerStateMachine {
         guard let display = router.current else { return out }
         let screen = ActiveBoxMapper.screenPoint(fromBox: smoother.process(box, at: time), on: display)
         cursor = screen
-        history.append(PointerSample(time: time, cursor: screen, box: box, pinchDistance: 1, tipOffset: .zero))
-        history.removeAll { time - $0.time > Self.historySpan }
 
         out.append(emitMove(screen, suppressed: suppressed))
         if [.hover, .dragging].contains(state) && !suppressed {
@@ -165,8 +164,6 @@ extension PointerStateMachine {
         var lock = lock
         var out = StepOutput()
         cursor = lock.point
-        history.append(PointerSample(time: time, cursor: lock.point, box: lastBox ?? .zero, pinchDistance: 1, tipOffset: .zero))
-        history.removeAll { time - $0.time > Self.historySpan }
 
         let tip = hand.handSpace(trackedPoint(hand))
         let size = max(hand.handSize, 1e-4)
@@ -177,8 +174,11 @@ extension PointerStateMachine {
             lock.wakeStart = time
         }
         let inWindow = lock.wakeStart.map { time - $0 <= config.shake.wakeTime } ?? true
+        if !isFist { lock.handOpenSinceLock = true }
 
-        if state == .hover && isFist && other == nil && inWindow {
+        // The fist must be made while locked: one still held from before (a drag the real mouse
+        // interrupted) never presses again.
+        if state == .hover && isFist && lock.handOpenSinceLock && other == nil && inWindow {
             // Press where the cursor is locked; the fist drags from here.
             state = .dragging
             if !suppressed {
@@ -319,7 +319,7 @@ extension PointerStateMachine {
             intents += [.scroll(dx: 0, dy: 0, phase: .began), .scroll(dx: now.x, dy: now.y, phase: .changed),
                         .scroll(dx: 0, dy: 0, phase: .ended)]
             // A glide at v0 under friction k covers v0 / k in total.
-            let friction = Self.momentumFriction(config)
+            let friction = config.momentumFriction
             intents.append(momentum.start(velocity: (total - now) * friction, at: time))
             return StepOutput(intents: intents, events: [.scrollStarted, .scrollEnded])
         }
@@ -339,6 +339,8 @@ struct CursorLock {
     var wakeStart: Double?
     /// Just finished a gesture: waiting for the hand to stop before watching for the next movement.
     var settling = false
+    /// The hand has been seen not making a fist since the lock began, so a fist now is new.
+    var handOpenSinceLock = false
 
     /// Wait for the next movement from here.
     mutating func restFrom(_ tip: Point2) {

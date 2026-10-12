@@ -1,7 +1,8 @@
 import Foundation
 
-/// The labels of the guided tuning session (SPEC-M7 → Recording and tuning protocol), plus
-/// `zoom`, which the synthetic generator also produces for tests.
+/// Kinds of hand motion the synthetic generator produces. They come from the retired Velocity
+/// model's tuning session; the tests now use them to check that none of these ordinary
+/// movements clicks, presses or scrolls in Hold & wiggle.
 public enum GestureLabel: String, Codable, CaseIterable, Equatable {
     case click
     case rightClick = "right-click"
@@ -16,103 +17,6 @@ public enum GestureLabel: String, Codable, CaseIterable, Equatable {
     case jitter
     case outOfFrame = "out-of-frame"
     case zoom
-
-    /// The guided session's prompts, in order (zoom needs two hands and isn't prompted).
-    public static let scripted: [GestureLabel] = [
-        .click, .rightClick, .doubleClick, .scrollUp, .scrollDown, .repositionFast,
-        .repositionSlow, .fineTarget, .drag, .rest, .jitter, .outOfFrame,
-    ]
-
-    /// What the user should do, shown by the overlay during a guided recording.
-    public var prompt: String {
-        switch self {
-        case .click: return "Tap down once, from a still hand"
-        case .rightClick: return "Tap sideways once"
-        case .doubleClick: return "Tap down twice, quickly"
-        case .scrollUp: return "Flick up"
-        case .scrollDown: return "Flick down"
-        case .repositionFast: return "Move the pointer quickly somewhere else"
-        case .repositionSlow: return "Move the pointer slowly somewhere else"
-        case .fineTarget: return "Make tiny, careful pointer moves"
-        case .drag: return "Tap, then move slowly, then hold still"
-        case .rest: return "Hold your hand still"
-        case .jitter: return "Hold still (dim the lights if you can)"
-        case .outOfFrame: return "Move your hand out of view and back"
-        case .zoom: return "Spread both hands apart quickly"
-        }
-    }
-
-    /// Recording length per repetition in a guided session.
-    public var recordDuration: Double {
-        switch self {
-        case .rest, .jitter: return 5
-        case .drag, .outOfFrame, .fineTarget, .repositionSlow: return 3
-        default: return 2
-        }
-    }
-
-    /// What Velocity mode should do for this label.
-    public var expected: GestureOutcome {
-        switch self {
-        case .click: return .click
-        case .rightClick: return .rightClick
-        case .doubleClick: return .doubleClick
-        case .scrollUp: return .scrollUp
-        case .scrollDown: return .scrollDown
-        case .drag: return .drag
-        case .zoom: return .zoom
-        case .repositionFast, .repositionSlow, .fineTarget, .rest, .jitter, .outOfFrame: return .none
-        }
-    }
-}
-
-/// The single most significant thing that happened during a labeled stretch of frames.
-public enum GestureOutcome: String, Codable, CaseIterable, Equatable {
-    case click
-    case doubleClick = "double-click"
-    case rightClick = "right-click"
-    case scrollUp = "scroll-up"
-    case scrollDown = "scroll-down"
-    case scrollLeft = "scroll-left"
-    case scrollRight = "scroll-right"
-    case drag
-    case zoom
-    case none
-
-    /// Summarize feedback events: a drag or zoom outranks the click that may precede it, a
-    /// double click outranks its first click, otherwise the first action wins.
-    public static func of(_ events: [PointerEvent]) -> GestureOutcome {
-        var first: GestureOutcome?
-        var sawDrag = false, sawZoom = false, sawDouble = false
-        for event in events {
-            switch event {
-            case .dragStarted: sawDrag = true
-            case .zoomStarted: sawZoom = true
-            case let .clicked(count):
-                if count >= 2 { sawDouble = true }
-                if first == nil { first = .click }
-            case .rightClicked:
-                if first == nil { first = .rightClick }
-            case let .segmentClassified(report):
-                let scroll: GestureOutcome? = {
-                    switch report.gesture {
-                    case .scrollUp: return .scrollUp
-                    case .scrollDown: return .scrollDown
-                    case .scrollLeft: return .scrollLeft
-                    case .scrollRight: return .scrollRight
-                    default: return nil
-                    }
-                }()
-                if first == nil, let scroll { first = scroll }
-            default:
-                break
-            }
-        }
-        if sawDrag { return .drag }
-        if sawZoom { return .zoom }
-        if sawDouble { return .doubleClick }
-        return first ?? .none
-    }
 }
 
 /// A labeled stretch of a recording: frames in `startTime...endTime` show `label`.
@@ -128,11 +32,11 @@ public struct LabeledSegment: Codable, Equatable {
     }
 }
 
-/// Synthetic Velocity-mode gestures with realistic timing and noise: minimum-jerk hand
+/// Synthetic hand motions with realistic timing and noise: minimum-jerk hand
 /// motion, per-joint tracker noise, slow sway, timestamp jitter, dropped frames, and (for
 /// `jitter`) low-confidence garbage frames and single-frame landmark glitches. Every sample is
 /// deterministic from its seed.
-public enum VelocitySynthetic {
+public enum MotionSynthetic {
     public struct Sample {
         public var label: GestureLabel
         public var frames: [TrackingFrame]
@@ -384,34 +288,6 @@ public enum VelocitySynthetic {
         hand.size = size
         hand.wrist = hand.wristPlacing(indexTipAt: SyntheticHand.imagePoint(tip, offset: offset))
         return hand
-    }
-
-    /// A whole labeled session, like a guided recording: each label `repetitions` times, with
-    /// the hand out of view for half a second between samples.
-    public static func session(labels: [GestureLabel] = GestureLabel.scripted, repetitions: Int = 8,
-                               fps: Double = 60, seed: UInt64 = 1) -> Recording {
-        var frames: [TrackingFrame] = []
-        var segments: [LabeledSegment] = []
-        var time = 0.0
-        var n: UInt64 = 0
-        for label in labels {
-            for _ in 0..<repetitions {
-                n += 1
-                let sample = sample(label, fps: fps, seed: seed &* 1000 &+ n, start: time)
-                frames += sample.frames
-                segments.append(sample.segment)
-                time = (sample.frames.last?.timestamp ?? time) + 1.0 / fps
-                // Each sample starts somewhere else; rather than teleport the hand (which would
-                // itself look like a flick), it leaves the view for half a second in between.
-                for _ in 0..<Int(0.5 * fps) {
-                    frames.append(TrackingFrame(timestamp: time, hands: []))
-                    time += 1.0 / fps
-                }
-            }
-        }
-        var recording = Recording(frames: frames, info: ["source": "synthetic", "fps": String(Int(fps))])
-        recording.segments = segments
-        return recording
     }
 }
 
