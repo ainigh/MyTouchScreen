@@ -1,34 +1,53 @@
 name: build
 
-# Runs on pull requests and on demand. Needs GitHub Actions minutes available to the repository
-# (macOS runners bill at a higher rate on private repositories).
+# Every push: test GestureCore and build the app. A push to main also publishes the app as a
+# GitHub release, which is what install.sh and the menu's "Check for Updates…" download. When
+# Actions isn't available, both of those build the app on the Mac instead.
 on:
-  pull_request:
+  push:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
+  # The gesture engine, on Linux (cheap and quick).
   core-linux:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: swift-actions/setup-swift@v2
         with:
           swift-version: "6.0"
-      - run: swift build
       - run: swift test
       - run: tools/check.sh
 
   app-macos:
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
-      - name: Toolchain
-        run: swift --version
-      - name: Build (debug, whole package)
-        run: swift build 2>&1 | tee build.log
+      - run: swift --version
       - name: Test
         run: swift test
-      - name: Bundle
-        run: make app
-      - name: Doctor (no camera on CI; checks the binary launches)
-        run: GesturePointer.app/Contents/MacOS/GesturePointer --help
+      - name: Build the app
+        run: |
+          echo "VERSION=1.0.${{ github.run_number }}" >> "$GITHUB_ENV"
+          VERSION="1.0.${{ github.run_number }}" BRANCH="${{ github.ref_name }}" UNIVERSAL=1 scripts/make-app.sh
+      - name: Launches
+        run: build/GesturePointer.app/Contents/MacOS/GesturePointer --help
+      - uses: actions/upload-artifact@v4
+        with:
+          name: GesturePointer
+          path: build/GesturePointer.zip
+      - name: Release
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        # A re-run keeps its run number, so the release may already exist: replace its zip.
+        run: |
+          if gh release view "v$VERSION" >/dev/null 2>&1; then
+            gh release upload "v$VERSION" build/GesturePointer.zip --clobber
+          else
+            gh release create "v$VERSION" build/GesturePointer.zip --target "$GITHUB_SHA" \
+              --title "Wisp $VERSION" --notes "$(git log -1 --format=%B)"
+          fi

@@ -121,7 +121,7 @@ struct WelcomeView: View {
             }
 
             step(number: 2, title: "Accessibility",
-                 detail: "Lets Wisp move the pointer and click. Turn on “GesturePointer” in the list — the app itself, not Terminal.",
+                 detail: "Lets Wisp move the pointer and click. Turn on “GesturePointer” in the list — the app itself, not Terminal. After an update, if it's already on but Wisp still asks, remove it with − and turn it on again.",
                  done: monitor.accessibility) {
                 Button("Open Accessibility Settings") {
                     Permissions.promptAccessibility()

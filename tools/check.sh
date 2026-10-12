@@ -9,7 +9,7 @@ bad() { printf 'FAIL: %s\n' "$*"; fail=1; }
 echo "== No unfinished-work markers in code or scripts"
 # Docs that legitimately discuss these words (the instructions themselves) are excluded.
 pattern='TODO|FIXME|XXX|placeholder|not implemented|fatalError\("not'
-if grep -RInE "$pattern" Sources Tests scripts tools Makefile Info.plist \
+if grep -RInE "$pattern" Sources Tests scripts tools Makefile Info.plist install.sh \
      --exclude=check.sh 2>/dev/null; then
   bad "unfinished-work markers found (above)"
 else
@@ -42,7 +42,7 @@ grep -A1 '<key>CFBundleExecutable</key>' Info.plist | grep -q '<string>GesturePo
 note "checked"
 
 echo "== Scripts are executable"
-for s in scripts/make-app.sh tools/check.sh; do
+for s in scripts/make-app.sh tools/check.sh install.sh; do
   [ -x "$s" ] || bad "$s is not executable"
 done
 note "checked"

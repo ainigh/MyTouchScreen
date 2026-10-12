@@ -10,7 +10,7 @@ Either from the menu bar: **Record Session for Tuning** (saves `Wisp-<date>.json
 Desktop; choose **Stop Recording Session** when done), or from Terminal:
 
 ```sh
-GesturePointer.app/Contents/MacOS/GesturePointer --record ~/Desktop/session.json
+~/Applications/GesturePointer.app/Contents/MacOS/GesturePointer --record ~/Desktop/session.json
 ```
 
 What to do while recording (about a minute is plenty):
@@ -31,13 +31,13 @@ The file holds only joint coordinates (21 points per hand) and the settings in u
 On the Mac, with the real cursor (careful — it clicks):
 
 ```sh
-GesturePointer.app/Contents/MacOS/GesturePointer --replay ~/Desktop/session.json
+~/Applications/GesturePointer.app/Contents/MacOS/GesturePointer --replay ~/Desktop/session.json
 ```
 
 or safely, printing what would happen instead:
 
 ```sh
-GesturePointer.app/Contents/MacOS/GesturePointer --replay ~/Desktop/session.json --dry-run
+~/Applications/GesturePointer.app/Contents/MacOS/GesturePointer --replay ~/Desktop/session.json --dry-run
 ```
 
 On any platform (this is what Claude uses on Linux):

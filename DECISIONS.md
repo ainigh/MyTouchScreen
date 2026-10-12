@@ -55,3 +55,13 @@ One line per judgment call, newest at the bottom. All delegated by the owner.
 - "Camera pauses when disengaged" → standby at 8 fps Vision while palm-engage is on (see Technical); full stop when it's off or Wisp is turned off.
 - Sounds generated at launch, not by a build script (see Technical).
 - No app icon file: an `.icns` is a binary asset; the app lives in the menu bar and uses SF Symbols there.
+
+## Install and updates (modelled on ainigh/tool-mac-tool)
+- One-line install through `gh` (`install.sh`): the repository is private, so gh signed in is the one auth path that works for both the release download and the source tarball. Release first; build from source when there's no release, `WISP_FROM_SOURCE=1`, or `WISP_BRANCH` is set. Keeps the previous copy until the new one is seen running for 8 s, else restores it.
+- Installs into `~/Applications` (no admin rights, same as tool-mac-tool); `make install` now uses the same place so there's one copy to grant permissions to.
+- In-app updater follows the branch recorded in Info.plist (`WispBranch`) and compares the branch head with `WispCommit`; prebuilt when the latest release was made from that exact commit, else builds here with `scripts/make-app.sh`. The decision logic (`UpdatePlan`, `Version`, `Release`, `Commit`, Swift version parsing) lives in GestureCore and is tested on Linux.
+- Release versions are `1.0.<CI run number>`; local/source builds are `1.0-<short sha>`.
+- `make-app.sh` now writes to `build/` and produces `GesturePointer.zip`, so CI, the installer and the updater all build the same way. Requires Swift ≥ 5.9 (the package's tools version), with an installed-Xcode fallback.
+- Optional `WISP_SIGN_IDENTITY` / `signIdentity` default: ad-hoc signatures change every build, so macOS forgets Camera/Accessibility grants after an update; a stable self-made code-signing certificate keeps them. Optional because creating a certificate needs the user.
+- The updater disengages Wisp before restarting so no button or modifier can be left held.
+- CI back to running on every push (as in tool-mac-tool) since releases come from pushes to main; when Actions isn't available, installs and updates fall back to building on the Mac.

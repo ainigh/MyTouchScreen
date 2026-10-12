@@ -1,5 +1,6 @@
 #if canImport(AppKit)
 import AppKit
+import GestureCore
 
 /// What the menu-bar icon shows.
 enum MenuBarStatus: Equatable {
@@ -20,6 +21,8 @@ protocol MenuBarActions: AnyObject {
     var showsPreview: Bool { get }
     var launchesAtLogin: Bool { get }
     var hotkeyDisplay: String { get }
+    var versionLine: String { get }
+    var updateState: Updater.State { get }
     func toggleEnabled()
     func toggleEngaged()
     func selectCamera(_ id: String?)
@@ -29,6 +32,9 @@ protocol MenuBarActions: AnyObject {
     func toggleRecording()
     func showSettings()
     func showWelcome()
+    func checkForUpdates()
+    func installUpdate()
+    func copyUpdateError()
     func quit()
 }
 
@@ -123,7 +129,43 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         login.state = actions.launchesAtLogin ? .on : .off
         menu.addItem(login)
         menu.addItem(.separator())
+        addUpdateItems(actions)
+        menu.addItem(.separator())
         menu.addItem(item("Quit Wisp", #selector(quit), key: "q"))
+    }
+
+    private func addUpdateItems(_ actions: MenuBarActions) {
+        let version = NSMenuItem(title: actions.versionLine, action: nil, keyEquivalent: "")
+        version.isEnabled = false
+        menu.addItem(version)
+        switch actions.updateState {
+        case .idle, .upToDate:
+            menu.addItem(item("Check for Updates…", #selector(checkForUpdates)))
+        case .checking:
+            let checking = item("Checking for Updates…", #selector(checkForUpdates))
+            checking.isEnabled = false
+            menu.addItem(checking)
+        case .available(let plan):
+            let title: String
+            switch plan {
+            case let .prebuilt(commit, release): title = "Update to \(release.tag) — \(commit.title)"
+            case let .buildHere(commit): title = "Update (build here) — \(commit.short): \(commit.title)"
+            case .upToDate: title = "Check for Updates…"
+            }
+            let update = item(title, #selector(installUpdate))
+            update.toolTip = "Downloads the new version (or builds it on this Mac when GitHub hasn't), then restarts Wisp."
+            menu.addItem(update)
+        case .installing(let step):
+            let progress = item(step, #selector(installUpdate))
+            progress.isEnabled = false
+            menu.addItem(progress)
+        case .failed(let message):
+            let failed = NSMenuItem(title: message, action: nil, keyEquivalent: "")
+            failed.isEnabled = false
+            menu.addItem(failed)
+            menu.addItem(item("Copy Update Details", #selector(copyUpdateError)))
+            menu.addItem(item("Check for Updates…", #selector(checkForUpdates)))
+        }
     }
 
     private func item(_ title: String, _ action: Selector, key: String = "") -> NSMenuItem {
@@ -144,6 +186,9 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     @objc private func showSettings() { actions?.showSettings() }
     @objc private func showWelcome() { actions?.showWelcome() }
     @objc private func toggleLaunchAtLogin() { actions?.toggleLaunchAtLogin() }
+    @objc private func checkForUpdates() { actions?.checkForUpdates() }
+    @objc private func installUpdate() { actions?.installUpdate() }
+    @objc private func copyUpdateError() { actions?.copyUpdateError() }
     @objc private func quit() { actions?.quit() }
 }
 #endif
