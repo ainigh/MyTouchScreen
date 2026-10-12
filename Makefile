@@ -5,7 +5,7 @@
 #   make doctor   print permissions, cameras, displays, measured fps
 #   make install  copy the app to /Applications
 #   make test     run the GestureCore test suite
-#   make check    static checks (no placeholders, imports, Info.plist)
+#   make check    static checks (unfinished markers, imports, Info.plist)
 
 APP := GesturePointer.app
 BIN := $(APP)/Contents/MacOS/GesturePointer
