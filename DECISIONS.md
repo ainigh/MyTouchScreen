@@ -11,6 +11,29 @@ One line per judgment call, newest at the bottom. All delegated by the owner.
 - Menu-bar glyph: SF Symbols `hand.point.up.left` (standby), `hand.point.up.left.fill` (engaged), `hand.raised.slash` (off / missing permission).
 
 ## Gesture thresholds and feel
+- Pointer filtering happens in *active-box units* (1.0 = full screen width), so settings are independent of display size. Defaults: 1€ minCutoff 0.6 Hz, beta 6, dCutoff 1 Hz — fast sweeps (screen width in 0.6 s) lag < 0.5 frame; chosen from a grid search in the test suite.
+- Added a two-length "leash" dead zone after the 1€ filter: 0.0015 box while moving, 0.005 box (≈9 pt) once still for 250 ms. With Vision-like jitter of 6–8 pt RMS this holds the cursor at exactly 0 movement; the 1€ filter alone cannot get below ~1 pt/frame without becoming sluggish.
+- Precision mode: below 0.12 box/s, hand motion is scaled by 0.45 (ramping smoothly to 1 at the threshold); the offset this creates is capped at 0.06 box and drained during fast movement so the absolute hand→screen mapping always comes back.
+- Pinch: enter 0.35, exit 0.5 (normalized by wrist→middle-MCP), minimum 60 ms, refractory 120 ms counted from when the fingers opened (counting from the release *confirmation* swallowed real double pinches at 30 fps), release must persist 30 ms so a single glitched frame can't drop a drag.
+- Pinch arm distance 0.65: as fingers close, the pointer anchor switches from the fingertip to the index knuckle plus the fingertip offset captured when the closure *began*; the click lands where the user was aiming even though the fingertip moves ~0.5 hand-sizes during a pinch. The pinch-start look-back walks back through recent samples while the fingers were further apart (≤ 400 ms).
+- Drag: pinch held 250 ms, or moved > 0.012 box after the 100 ms freeze. Double click: within 400 ms and 2% of screen width; the second click reuses the first click's exact position.
+- Right click fires on pinch confirmation (no hold semantics to wait for), so it feels instant.
+- Fist = all four fingers' tip→wrist / MCP→wrist ratio < 1.2; extended > 1.45; poses need 80 ms to confirm. Pinches are ignored while the index is curled so a fist never clicks.
+- Open palm engage: 600 ms to engage, 800 ms to disengage (slightly longer so an open hand used for pointing doesn't drop out), palm must be still (< 0.6 hand-sizes/s). The palm that toggled must change pose before it can toggle again.
+- Hand dropout grace 150 ms (Vision misses frames); after that any held button/modifier is released. Lost for 2 s → disengage.
+- Scroll: one box of fist travel = 1600 pt × speed; natural direction by default; momentum with exponential friction 4/s, starts above 120 pt/s, stops below 40 pt/s, integrated exactly so it is tick-rate independent.
+- Zoom: ratio of the distance between the two pinch points, normalized by mean hand size (moving both hands toward the camera doesn't zoom). Zoom suppresses the primary hand's click.
+- Display jump: 400 ms at an edge with a neighbour in that direction; the hand must return inside (8% margin) before jumping again, otherwise a hand resting at the edge would ping-pong.
+- Dwell click (off by default): 800 ms within 0.8% of screen width; fires once, then needs movement.
+- Real mouse wins: any real mouse movement suppresses hand output for 0.8 s and moves the pointer to the mouse's display.
+- Default (uncalibrated) active box: 42% × 46% of the camera image centered at (0.5, 0.45), mirrored, with 4% overshoot past each edge so the menu bar and Dock are reachable without stretching.
+
+## Technical
+- Landmark coordinates are stored un-mirrored, top-left origin, normalized to the image; every distance is measured after undoing the 16:9 stretch (`HandFrame.imageAspect`), otherwise pinch and curl ratios change as the hand rotates.
+- Calibration uses a homography (not bilinear) from the four pointed corners, because pointing from an angle produces a perspective-distorted quad. Mirroring falls out of the calibration for free.
+- `GestureConfig` decoding is lenient (missing keys keep defaults) so exported settings survive app updates.
+- Replay format: one JSON document, one frame per line, written incrementally; a file cut off by a crash is repaired on load by closing the array after the last complete frame.
+- Swift tools version 5.9 (Swift 5 language mode) so the Mac layer's GCD/delegate code doesn't need Swift 6 strict-concurrency annotations to compile.
 
 ## Technical
 

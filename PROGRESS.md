@@ -3,16 +3,16 @@
 Resume from the first unchecked item. Tick only after verification per `CLAUDE.md`.
 
 ## Setup
-- [ ] Read CLAUDE.md, SPEC.md, PROGRESS.md
-- [ ] Concept (name, overlay identity, accent color, font) written to DECISIONS.md
-- [ ] Swift toolchain available in sandbox? version ______ (installed it? ______)
-- [ ] Package.swift with GestureCore + GesturePointerApp targets, Mac files guarded, tools/check.sh, first commit
+- [x] Read CLAUDE.md, SPEC.md, PROGRESS.md
+- [x] Concept (name, overlay identity, accent color, font) written to DECISIONS.md
+- [x] Swift toolchain available in sandbox? version 6.0.3 (installed it? yes — swift.org Ubuntu 24.04 tarball into /opt/swift)
+- [x] Package.swift with GestureCore + GesturePointerApp targets, Mac files guarded, tools/check.sh, first commit
 
 ## M1 — GestureCore
-- [ ] HandFrame, OneEuroFilter, Calibration, GestureDetector, PointerStateMachine, Intents, Replay
-- [ ] Synthetic stream generator (steady, jitter, fast ramp, pinch taps, double pinch, drag, fist scroll, palm hold, hand lost)
-- [ ] Tests green on Linux
-- [ ] Committed
+- [x] HandFrame, OneEuroFilter, Calibration, GestureDetector, PointerStateMachine, Intents, Replay
+- [x] Synthetic stream generator (steady, jitter, fast ramp, pinch taps, double pinch, drag, fist scroll, palm hold, hand lost)
+- [x] Tests green on Linux (59 tests, `swift test`)
+- [x] Committed
 
 ## M2 — Camera and tracking
 - [ ] Camera.swift (device list, Continuity Camera preference, 720p, best fps)
@@ -68,3 +68,4 @@ Resume from the first unchecked item. Tick only after verification per `CLAUDE.m
 5. Optionally run with `--record session.json` for a minute and hand the file back for tuning.
 
 ## Notes / blockers
+- M1: `swift build --target GestureCore`, `swift test` (59 tests) and full `swift build` all green on Linux with Swift 6.0.3. Core also covers M4's gestures (scroll momentum, zoom, app switcher, precision, display jump, dwell), tested here.
