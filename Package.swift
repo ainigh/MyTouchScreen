@@ -5,7 +5,7 @@ import PackageDescription
 
 let package = Package(
     name: "GesturePointer",
-    platforms: [.macOS(.v14)],
+    platforms: [.macOS(.v14)], 
     products: [
         .executable(name: "GesturePointer", targets: ["GesturePointerApp"]),
         .library(name: "GestureCore", targets: ["GestureCore"]),
