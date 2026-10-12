@@ -81,8 +81,9 @@ public struct GestureConfig: Equatable, Codable {
     public var appSwitcherStepBox = 0.08
 
     // Multi-display
-    /// The hand drives the largest display only (no edge jumps, the real mouse doesn't move it).
-    public var stayOnLargestDisplay = true
+    /// The hand stays on the display the mouse pointer was on when Wisp engaged (no edge
+    /// jumps; moving the real mouse to another display while engaged doesn't move it either).
+    public var stayOnEngagedDisplay = true
     public var displayJumpDwell = 0.4
 
     // Dwell click

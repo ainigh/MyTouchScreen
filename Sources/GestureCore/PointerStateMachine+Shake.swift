@@ -6,7 +6,7 @@ import Foundation
 /// - every movement moves the cursor;
 /// - holding the cursor still for `shake.dwellTime` clicks, once, where it rests;
 /// - wiggling (`shake.reversals` direction changes along one axis within `shake.window`) puts the
-///   cursor back where the wiggle started and enters scroll mode: the palm's movement along that
+///   cursor back where the wiggle started and enters scroll mode: the fingertip's movement along that
 ///   axis scrolls, until the hand holds still.
 ///
 /// Left hand visible (any pose, anywhere):
@@ -58,12 +58,26 @@ extension PointerStateMachine {
         return last - since >= config.shake.modifierAppearTime
     }
 
+    /// Fingertip speed in hand sizes per second, lightly smoothed. Everything in this model
+    /// follows the fingertip — the point the cursor follows — because people wiggle and move the
+    /// finger as often as the whole hand (the owner's first recording: the palm stayed put while
+    /// the index finger wagged).
+    func updateTipSpeed(_ hand: HandFrame, at time: Double) {
+        let tip = hand.handSpace(hand[.indexTip])
+        if let last = lastTip, time > last.time {
+            let instant = tip.distance(to: last.point) / max(hand.handSize, 1e-4) / (time - last.time)
+            tipSpeed += (instant - tipSpeed) * 0.4
+        }
+        lastTip = (time, tip)
+    }
+
     // MARK: Frame
 
     func updatePointerShake(_ hand: HandFrame, modifier: HandFrame?, at time: Double) -> StepOutput {
         var out = StepOutput()
         let suppressed = time < outputSuppressedUntil
         shakeDetector.params = config.shake
+        updateTipSpeed(hand, at: time)
         updateModifier(modifier, at: time)
         let modified = modifierPresent
 
@@ -97,7 +111,7 @@ extension PointerStateMachine {
             dragPress = nil
         case .hover where modified:
             state = .dragReady
-            dragPress = (cursor ?? .zero, hand.motionCentroid, time)
+            dragPress = (cursor ?? .zero, hand.handSpace(hand[.indexTip]), time)
             dragSettleSince = nil
             dwellAnchor = nil
             shakeDetector.reset()
@@ -132,7 +146,7 @@ extension PointerStateMachine {
         // A wiggle scrolls; with the left hand up it zooms. Mid-drag it is just drag motion.
         if state == .dragging {
             shakeDetector.reset()
-        } else if let wiggle = shakeDetector.update(centroid: hand.motionCentroid, handSize: hand.handSize, at: time) {
+        } else if let wiggle = shakeDetector.update(point: hand.handSpace(hand[.indexTip]), handSize: hand.handSize, at: time) {
             out.append(enterShakeMode(zoom: state == .dragReady, wiggle: wiggle, hand: hand, at: time,
                                       suppressed: suppressed))
             return out
@@ -167,7 +181,7 @@ extension PointerStateMachine {
     /// move is what lets a wiggle (zoom) start without pressing anything.
     private func commitDragIfMoved(_ hand: HandFrame, at time: Double, suppressed: Bool, minimum: Double) -> StepOutput {
         guard state == .dragReady, let press = dragPress else { return StepOutput() }
-        let moved = hand.motionCentroid.distance(to: press.centroid) / max(hand.handSize, 1e-4)
+        let moved = hand.handSpace(hand[.indexTip]).distance(to: press.centroid) / max(hand.handSize, 1e-4)
         guard moved >= minimum else { return StepOutput() }
         state = .dragging
         dwellAnchor = nil
@@ -181,7 +195,7 @@ extension PointerStateMachine {
 
     /// A small move followed by holding still also commits (dragging a slider a little).
     private func settledAfterSmallMove(_ hand: HandFrame, at time: Double) -> Bool {
-        guard palmSpeed < config.shake.exitStillSpeed else {
+        guard tipSpeed < config.shake.exitStillSpeed else {
             dragSettleSince = nil
             return false
         }
@@ -202,7 +216,7 @@ extension PointerStateMachine {
         shakeScrollVertical = wiggle.vertical
         shakeStillSince = nil
         dwellAnchor = nil
-        scrollFilter.reset(to: mapper.boxPoint(fromCamera: hand.palmCenter), at: time)
+        scrollFilter.reset(to: mapper.boxPoint(fromCamera: hand[.indexTip]), at: time)
         scrollLastPalm = nil
         scrollRemainder = .zero
         guard !suppressed else { return out }
@@ -216,10 +230,10 @@ extension PointerStateMachine {
         return out
     }
 
-    /// The palm's movement along the wiggle's axis scrolls (content follows the hand with
+    /// The fingertip's movement along the wiggle's axis scrolls (content follows the hand with
     /// natural scrolling) or zooms (up / right = in); holding still ends it. The cursor stays.
     private func updateShakeMode(_ hand: HandFrame, at time: Double, suppressed: Bool) -> StepOutput {
-        if palmSpeed < config.shake.exitStillSpeed {
+        if tipSpeed < config.shake.exitStillSpeed {
             if shakeStillSince == nil { shakeStillSince = time }
             if time - (shakeStillSince ?? time) >= config.shake.exitStillTime {
                 return endShakeMode(hand, at: time)
@@ -228,13 +242,13 @@ extension PointerStateMachine {
             shakeStillSince = nil
         }
 
-        let palmBox = scrollFilter.filter(mapper.boxPoint(fromCamera: hand.palmCenter), at: time)
+        let tipBox = scrollFilter.filter(mapper.boxPoint(fromCamera: hand[.indexTip]), at: time)
         defer {
-            scrollLastPalm = palmBox
+            scrollLastPalm = tipBox
             scrollLastTime = time
         }
         guard let last = scrollLastPalm, time > scrollLastTime else { return StepOutput() }
-        let moved = palmBox - last
+        let moved = tipBox - last
 
         if state == .zooming {
             // Box y grows downward, so "up" is negative y.
@@ -267,7 +281,7 @@ extension PointerStateMachine {
         if let cursor { reanchor(at: cursor, time: time) }
         if modifierPresent, let cursor {
             state = .dragReady
-            dragPress = (cursor, hand.motionCentroid, time)
+            dragPress = (cursor, hand.handSpace(hand[.indexTip]), time)
             dragSettleSince = nil
         } else {
             state = .hover

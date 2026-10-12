@@ -4,8 +4,10 @@ import Foundation
 public struct ShakeParams: Equatable, Codable {
     /// Hold the cursor still this long to click.
     public var dwellTime = 2.0
-    /// "Still" = the cursor stays within this fraction of the screen width.
-    public var dwellRadiusBox = 0.008
+    /// "Still" = the cursor stays within this fraction of the screen width. A calm real
+    /// fingertip drifts the cursor 25–40 pt over a couple of seconds (owner's recording), so
+    /// this is wider than the Pose-mode dwell radius.
+    public var dwellRadiusBox = 0.025
     /// Direction changes along one axis that start scrolling…
     public var reversals = 3
     /// …all within this window.
@@ -13,8 +15,9 @@ public struct ShakeParams: Equatable, Codable {
     /// A movement only counts as a stroke (and its end as a direction change) once it has
     /// travelled this far, so tracker jitter and small corrections never add up to a wiggle.
     public var minStroke = 0.25
-    /// Scrolling ends when the palm stays below this speed (hand sizes per second)…
-    public var exitStillSpeed = 0.5
+    /// Scrolling ends when the fingertip stays below this speed (hand sizes per second)…
+    /// A resting real fingertip jitters at 0.35–0.8 hand sizes/s (owner's recording).
+    public var exitStillSpeed = 1.2
     /// …for this long.
     public var exitStillTime = 0.5
 
@@ -36,7 +39,7 @@ public struct ShakeParams: Equatable, Codable {
     public init() {}
 }
 
-/// Counts direction changes of the palm along each axis. Three changes on one axis within the
+/// Counts direction changes of the fingertip along each axis. Three changes on one axis within the
 /// window is a wiggle: the user wants to scroll along that axis.
 public struct ShakeDetector {
     public var params: ShakeParams
@@ -108,8 +111,9 @@ public struct ShakeDetector {
         public var startTime: Double
     }
 
-    /// Feed the palm centroid (hand space). Returns a detection once a wiggle is complete.
-    public mutating func update(centroid: Point2, handSize: Double, at time: Double) -> Detection? {
+    /// Feed the tracked point (hand space; the app uses the index fingertip). Returns a
+    /// detection once a wiggle is complete.
+    public mutating func update(point centroid: Point2, handSize: Double, at time: Double) -> Detection? {
         let threshold = params.minStroke * max(handSize, 1e-4)
         let needed = max(params.reversals, 1)
         for vertical in [true, false] {

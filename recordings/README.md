@@ -8,5 +8,6 @@ Every `*.json` here that has labeled `segments` is replayed by
 `VelocityParams`. The files contain only hand geometry (21 points per hand per frame) and
 timestamps — no images.
 
-None are committed yet: the defaults were tuned against the synthetic generator
-(`VelocitySynthetic`) until the owner records a session.
+`owner-freeform-2026-10-12.json` is the owner's first free-form session (Hold & wiggle, no
+labels). `DwellShakeTests.testOwnerRecordingFingerWiggleScrollsAndLeftHandDrags` replays it: the
+finger wags must scroll, the two left-hand-up stretches must each drag, and nothing may click.

@@ -229,8 +229,8 @@ private struct PointerSettings: View {
     var body: some View {
         Form {
             Section("Displays") {
-                Toggle("Stay on the largest display", isOn: $settings.config.stayOnLargestDisplay)
-                Text("Off: hold the cursor against an edge to move to the next display.")
+                Toggle("Stay on the display the mouse is on when Wisp engages", isOn: $settings.config.stayOnEngagedDisplay)
+                Text("Off: hold the cursor against an edge to move to the next display, and the real mouse moves Wisp to its display.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section("Reach") {

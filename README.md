@@ -132,7 +132,9 @@ the right hand means — its pose and position don't matter.
 Notes: engaging never clicks by itself — the cursor has to move and settle first. With the left
 hand up, the button only goes down once the right hand clearly moves (about half a hand's length,
 or a small move followed by holding still), so a wiggle can still mean zoom. There's no right
-click in this model. With two monitors the cursor stays on the larger one (Settings → Pointer).
+click in this model. With two monitors the cursor stays on the monitor the mouse pointer was on
+when Wisp engaged (Settings → Pointer). Wiggling the index finger works as well as wiggling the
+whole hand: everything follows the fingertip.
 Left-handed? Settings → Gestures → *Pointing hand: Left* swaps the roles.
 
 ## Gesture cheat sheet — Velocity mode
@@ -230,7 +232,8 @@ your fingers started closing, so you don't need to hold perfectly still.
 
 Menu bar → *Settings…*
 
-- **Pointer:** *Stay on the largest display* (on by default; off = edge jumps between displays), *Active area* (how much hand movement covers the screen), *Steadiness* and
+- **Pointer:** *Stay on the display the mouse is on when Wisp engages* (on by default; off =
+  edge jumps between displays), *Active area* (how much hand movement covers the screen), *Steadiness* and
   *Responsiveness* (the 1€ filter's min cutoff and beta), *Rest lock* (how firmly a still cursor
   holds), *Precision* (slow movements are scaled down for fine targeting).
 - **Gestures:** *Input model* (Hold & wiggle / Velocity / Pose). Hold & wiggle: hold time,
