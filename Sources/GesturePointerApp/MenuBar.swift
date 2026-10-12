@@ -18,6 +18,7 @@ protocol MenuBarActions: AnyObject {
     var isRecording: Bool { get }
     var cameras: [CameraInfo] { get }
     var selectedCameraID: String? { get }
+    var pointerResponse: PointerResponse { get }
     var showsPreview: Bool { get }
     var launchesAtLogin: Bool { get }
     var hotkeyDisplay: String { get }
@@ -28,6 +29,7 @@ protocol MenuBarActions: AnyObject {
     func toggleEnabled()
     func toggleEngaged()
     func selectCamera(_ id: String?)
+    func selectPointerResponse(_ response: PointerResponse)
     func startCalibration()
     func togglePreview()
     func toggleLaunchAtLogin()
@@ -121,6 +123,17 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         }
         cameraItem.submenu = cameraMenu
         menu.addItem(cameraItem)
+        let speedItem = NSMenuItem(title: "Cursor Speed", action: nil, keyEquivalent: "")
+        let speedMenu = NSMenu()
+        for response in PointerResponse.allCases {
+            let entry = item(response.title, #selector(selectPointerResponse(_:)))
+            entry.representedObject = response.rawValue
+            entry.toolTip = response.summary
+            entry.state = actions.pointerResponse == response ? .on : .off
+            speedMenu.addItem(entry)
+        }
+        speedItem.submenu = speedMenu
+        menu.addItem(speedItem)
         menu.addItem(item("Calibrate This Display…", #selector(calibrate)))
         let preview = item("Show Camera Preview", #selector(togglePreview))
         preview.state = actions.showsPreview ? .on : .off
@@ -185,6 +198,10 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     @objc private func toggleEnabled() { actions?.toggleEnabled() }
     @objc private func toggleEngaged() { actions?.toggleEngaged() }
     @objc private func selectCamera(_ sender: NSMenuItem) { actions?.selectCamera(sender.representedObject as? String) }
+    @objc private func selectPointerResponse(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String, let response = PointerResponse(rawValue: raw) else { return }
+        actions?.selectPointerResponse(response)
+    }
     @objc private func calibrate() { actions?.startCalibration() }
     @objc private func togglePreview() { actions?.togglePreview() }
     @objc private func toggleRecording() { actions?.toggleRecording() }

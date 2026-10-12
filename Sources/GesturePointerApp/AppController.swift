@@ -470,6 +470,7 @@ final class AppController: MenuBarActions {
     var isRecording: Bool { recordingURL != nil }
     var cameras: [CameraInfo] { Camera.availableCameras() }
     var selectedCameraID: String? { settings.cameraID }
+    var pointerResponse: PointerResponse { settings.config.pointerResponse }
     var showsPreview: Bool { settings.showPreview }
     var launchesAtLogin: Bool {
         launchAtLogin.refresh()
@@ -518,6 +519,10 @@ final class AppController: MenuBarActions {
 
     func selectCamera(_ id: String?) {
         settings.cameraID = id
+    }
+
+    func selectPointerResponse(_ response: PointerResponse) {
+        settings.config.pointerResponse = response
     }
 
     func startCalibration() {

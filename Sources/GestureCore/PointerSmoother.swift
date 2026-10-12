@@ -13,6 +13,8 @@ import Foundation
 ///    leash grows to the rest radius, so tracker jitter never reaches the screen. Leaving the
 ///    lock needs a clear move (twice the radius) or one that lasts `escapeConfirmTime`; the
 ///    leash then shortens over ~100 ms, so the cursor catches up exactly with the hand.
+/// 3. **Response gain** — only when `config.pointerResponse` isn't `.direct`: the cursor moves by
+///    the steadied motion times a speed-dependent gain (see `PointerResponse`).
 public struct PointerSmoother {
     public var config: GestureConfig
     private var filter: OneEuroFilter2D
@@ -35,6 +37,7 @@ public struct PointerSmoother {
     /// away (a hand creeping slowly); smaller differences are left alone.
     static let resettleFraction = 0.5
     private var lastTime: Double?
+    private var gain = PointerGain()
 
     public init(config: GestureConfig) {
         self.config = config
@@ -56,6 +59,7 @@ public struct PointerSmoother {
         stillSince = nil
         escapeSince = nil
         lastTime = nil
+        gain.reset(to: point)
         if let point {
             filter.reset(to: point, at: time)
             puck = point
@@ -65,7 +69,20 @@ public struct PointerSmoother {
         }
     }
 
+    /// Like `reset(to: hand)`, but with the cursor left at `cursor`: with a non-direct response
+    /// the cursor isn't under the finger, and the hand carries on from where it is.
+    public mutating func reset(hand: Point2, cursor: Point2, at time: Double) {
+        reset(to: hand, at: time)
+        if !config.pointerResponse.isDirect { gain.reset(hand: hand, cursor: cursor) }
+    }
+
     public mutating func process(_ raw: Point2, at time: Double) -> Point2 {
+        let steady = steadyPoint(raw, at: time)
+        return gain.apply(steady, speed: filter.speed, response: config.pointerResponse)
+    }
+
+    /// Stages 1 and 2: where the finger points, with jitter removed.
+    private mutating func steadyPoint(_ raw: Point2, at time: Double) -> Point2 {
         let target = filter.filter(raw, at: time)
         let dt = lastTime.map { max(time - $0, 0) } ?? 0
         lastTime = time
