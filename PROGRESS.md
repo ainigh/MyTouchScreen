@@ -78,6 +78,14 @@ Resume from the first unchecked item. Tick only after verification per `CLAUDE.m
 - [x] Linux build + 118 tests green; check.sh green; Mac files reviewed (not compiled)
 - [x] Committed
 
+## Hold & wiggle: left-hand modifier (owner request)
+- [x] Right hand points; left hand up = drag (press on clear move), left down = drop; left up + wiggle = zoom; no right click
+- [x] Pointer stays on the largest display (setting to restore edge jumps)
+- [x] Tests: drag press/drop position and timing, small-move drag, left-hand dropout, zoom in/out with no press, left hand alone never points, largest display
+- [x] Settings, menu hint, README, DECISIONS; Linux build + tests + check.sh green; Mac files reviewed (not compiled)
+- [x] Committed
+- [ ] Parked: calibration by demonstrating each gesture (owner idea, later)
+
 ## Owner handoff (for the human, after Claude is done)
 1. `xcode-select --install` if not already done.
 2. `make app && make run`.

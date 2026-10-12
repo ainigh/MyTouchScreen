@@ -13,6 +13,8 @@ extension PointerStateMachine {
         _ = velocityEngine.reset()
         shakeDetector.reset()
         shakeStillSince = nil
+        dragPress = nil
+        dragSettleSince = nil
         warpOffset = .zero
         lastRawBox = nil
         trailAnchorTime = nil

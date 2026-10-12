@@ -228,6 +228,11 @@ private struct PointerSettings: View {
 
     var body: some View {
         Form {
+            Section("Displays") {
+                Toggle("Stay on the largest display", isOn: $settings.config.stayOnLargestDisplay)
+                Text("Off: hold the cursor against an edge to move to the next display.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             Section("Reach") {
                 ValueSlider(title: "Active area", value: $settings.config.boxScale, range: 0.5...1.5,
                             format: "%.2f×",
@@ -266,7 +271,7 @@ private struct GestureSettings: View {
     private var modelHelp: String {
         switch model {
         case .dwellShake:
-            return "Every movement moves the cursor. Hold still for 2 seconds to click. Wiggle back and forth (3 changes of direction within a second), then move to scroll; hold still to stop."
+            return "Right hand: every movement moves the cursor; hold still for 2 seconds to click; wiggle back and forth (3 changes of direction within a second), then move to scroll, hold still to stop. Raise your left hand (any pose) to drag with the right; lower it to drop. With the left hand up, a wiggle zooms instead: then move up to zoom in, down to zoom out."
         case .velocity:
             return "Your hand is the mouse: a quick tap from a still hand clicks, a long flick scrolls, tap then move drags."
         case .pose:
@@ -301,8 +306,13 @@ private struct GestureSettings: View {
                     ValueSlider(title: "Wiggle: smallest stroke", value: $settings.config.shake.minStroke,
                                 range: 0.1...1.0, format: "%.2f × hand",
                                 help: "Shorter back-and-forth movements are ignored, so a shaky hand never scrolls.")
-                    ValueSlider(title: "Stop scrolling after holding still", value: $settings.config.shake.exitStillTime,
+                    ValueSlider(title: "Stop scrolling or zooming after holding still", value: $settings.config.shake.exitStillTime,
                                 range: 0.2...1.5, format: "%.2f s")
+                    ValueSlider(title: "Drag starts after moving", value: $settings.config.shake.dragCommitDistance,
+                                range: 0.3...1.5, format: "%.2f × hand",
+                                help: "With the left hand up, the right hand must move this far (or move a little and hold still) before the button goes down, so a wiggle can still mean zoom.")
+                    ValueSlider(title: "Zoom: doubles every", value: $settings.config.shake.zoomDoublingBox,
+                                range: 0.08...0.6, format: "%.2f of screen")
                     Button("Reset Hold & wiggle to defaults") { settings.config.shake = ShakeParams() }
                 }
                 Section("Scroll") {

@@ -158,11 +158,26 @@ final class DisplayRouterTests: XCTestCase {
     }
 
     func testMachineJumpsDisplayWhenHeldAtEdge() {
-        let machine = engagedMachine(displays: [left, right])
+        var config = GestureConfig.pose
+        config.stayOnLargestDisplay = false   // edge jumps are only on when not pinned
+        let machine = engagedMachine(config, displays: [left, right])
         // Hold the finger far to the user's right (camera's left) for a second.
         let out = drive(machine, SyntheticStream.steady(tip: Point2(0.22, 0.45), duration: 1.2))
         XCTAssertTrue(out.events.contains(.displayChanged("R")))
         XCTAssertGreaterThan(out.moves.last!.x, 1728)
+    }
+
+    func testPinnedRouterStaysOnTheLargestDisplay() {
+        let small = DisplayInfo(id: "S", frame: Rect(x: 0, y: 0, width: 1440, height: 900))
+        let big = DisplayInfo(id: "B", frame: Rect(x: 1440, y: 0, width: 2560, height: 1440))
+        var router = DisplayRouter(displays: [small, big], dwell: 0.4)
+        router.pinLargest = true
+        XCTAssertEqual(router.current?.id, "B")
+        router.focus(containing: Point2(100, 100))
+        XCTAssertEqual(router.current?.id, "B")
+        XCTAssertNil(router.update(box: Point2(-0.1, 0.5), at: 0))
+        XCTAssertNil(router.update(box: Point2(-0.1, 0.5), at: 1))
+        XCTAssertEqual(router.current?.id, "B")
     }
 
     func testFocusFollowsRealMouse() {

@@ -1,21 +1,108 @@
 import Foundation
 
-/// Hold & wiggle (the default input model):
-/// - every movement moves the cursor (fingertip, smoothed exactly as in the other models);
+/// Hold & wiggle (the default input model). The right hand points; the left hand is a modifier.
+///
+/// Right hand alone:
+/// - every movement moves the cursor;
 /// - holding the cursor still for `shake.dwellTime` clicks, once, where it rests;
-/// - wiggling the hand back and forth (`shake.reversals` direction changes along one axis within
-///   `shake.window`) puts the cursor back where the wiggle started and enters scroll mode: the
-///   palm's movement along that axis then scrolls, until the hand holds still;
-/// - the open palm engages and disengages as always.
+/// - wiggling (`shake.reversals` direction changes along one axis within `shake.window`) puts the
+///   cursor back where the wiggle started and enters scroll mode: the palm's movement along that
+///   axis scrolls, until the hand holds still.
+///
+/// Left hand visible (any pose, anywhere):
+/// - the right hand's movement drags: the button goes down where the cursor was when the left
+///   hand appeared, as soon as the right hand clearly moves; the left hand leaving drops;
+/// - a wiggle zooms instead of scrolling: after it, moving up / right zooms in, down / left out,
+///   until the hand holds still.
+///
+/// The open (right) palm engages and disengages as always. `preferredHand = .left` swaps the
+/// roles for left-handed use.
 extension PointerStateMachine {
-    func updatePointerShake(_ hand: HandFrame, at time: Double) -> StepOutput {
+    // MARK: Hands
+
+    /// The pointing hand and the modifier hand. With two hands, position decides (more reliable
+    /// than Vision's chirality): the user's right hand is on the camera's left.
+    func assignPointerAndModifier(_ hands: [HandFrame], at time: Double) -> (HandFrame?, HandFrame?, Bool) {
+        let pointerIsLeft = config.preferredHand == .left
+        var pointer: HandFrame?
+        var modifier: HandFrame?
+        if hands.count >= 2 {
+            let byX = hands.sorted { $0[.wrist].x < $1[.wrist].x }
+            pointer = pointerIsLeft ? byX.last : byX.first
+            modifier = pointerIsLeft ? byX.first : byX.last
+        } else if let only = hands.first {
+            let modifierChirality: Chirality = pointerIsLeft ? .right : .left
+            if only.chirality == modifierChirality { modifier = only } else { pointer = only }
+        }
+        if let pointer {
+            primaryLastPalm = pointer.palmCenter
+            primaryLastSeen = time
+        }
+        return (pointer, modifier, false)
+    }
+
+    /// Debounced modifier presence: Vision drops a hand for a frame now and then, which must not
+    /// drop a drag, and a one-frame ghost hand must not start one.
+    func updateModifier(_ hand: HandFrame?, at time: Double) {
+        if hand != nil {
+            if modifierSince == nil { modifierSince = time }
+            modifierLastSeen = time
+        } else if let last = modifierLastSeen, time - last > config.shake.modifierGoneTime {
+            modifierSince = nil
+            modifierLastSeen = nil
+        }
+    }
+
+    var modifierPresent: Bool {
+        guard let since = modifierSince, let last = modifierLastSeen else { return false }
+        return last - since >= config.shake.modifierAppearTime
+    }
+
+    // MARK: Frame
+
+    func updatePointerShake(_ hand: HandFrame, modifier: HandFrame?, at time: Double) -> StepOutput {
         var out = StepOutput()
         let suppressed = time < outputSuppressedUntil
         shakeDetector.params = config.shake
+        updateModifier(modifier, at: time)
+        let modified = modifierPresent
 
-        if state == .scrolling {
-            out.append(updateShakeScroll(hand, at: time, suppressed: suppressed))
-            return out
+        switch state {
+        case .scrolling:
+            if modified {
+                out.append(endShakeMode(hand, at: time))
+            } else {
+                out.append(updateShakeMode(hand, at: time, suppressed: suppressed))
+                return out
+            }
+        case .zooming:
+            if !modified {
+                out.append(endShakeMode(hand, at: time))
+            } else {
+                out.append(updateShakeMode(hand, at: time, suppressed: suppressed))
+                return out
+            }
+        case .dragging where !modified:
+            // Left hand gone: drop where the cursor is.
+            state = .hover
+            out.append(releaseButton())
+            dragPress = nil
+        case .dragReady where !modified:
+            // Left hand gone before the drag committed: a small move still counts as a drag.
+            out.append(commitDragIfMoved(hand, at: time, suppressed: suppressed, minimum: config.shake.dragSmallDistance))
+            if state == .dragging {
+                out.append(releaseButton())
+            }
+            state = .hover
+            dragPress = nil
+        case .hover where modified:
+            state = .dragReady
+            dragPress = (cursor ?? .zero, hand.motionCentroid, time)
+            dragSettleSince = nil
+            dwellAnchor = nil
+            shakeDetector.reset()
+        default:
+            break
         }
 
         // Cursor: the fingertip, with the offset left by a warp draining as the hand moves.
@@ -42,45 +129,100 @@ extension PointerStateMachine {
         history.append(PointerSample(time: time, cursor: screen, box: box, pinchDistance: 1, tipOffset: .zero))
         history.removeAll { time - $0.time > Self.historySpan }
 
-        if let wiggle = shakeDetector.update(centroid: hand.motionCentroid, handSize: hand.handSize, at: time) {
-            // The wiggle moved the cursor around; scroll from where it started.
-            let anchor = cursorAt(wiggle.startTime)
-            out.intents += momentum.stop()
-            if !suppressed { out.append(warp(to: anchor, at: time)) }
-            cursor = anchor
-            state = .scrolling
-            shakeScrollVertical = wiggle.vertical
-            shakeStillSince = nil
-            dwellAnchor = nil
-            scrollFilter.reset(to: mapper.boxPoint(fromCamera: hand.palmCenter), at: time)
-            scrollLastPalm = nil
-            scrollRemainder = .zero
-            if !suppressed {
-                out.intents.append(.scroll(dx: 0, dy: 0, phase: .began))
-                out.events.append(.scrollStarted)
-            }
+        // A wiggle scrolls; with the left hand up it zooms. Mid-drag it is just drag motion.
+        if state == .dragging {
+            shakeDetector.reset()
+        } else if let wiggle = shakeDetector.update(centroid: hand.motionCentroid, handSize: hand.handSize, at: time) {
+            out.append(enterShakeMode(zoom: state == .dragReady, wiggle: wiggle, hand: hand, at: time,
+                                      suppressed: suppressed))
             return out
         }
 
-        out.append(emitMove(screen, suppressed: suppressed))
-        if dwellAnchor == nil {
-            // Just engaged (or the real mouse just let go): the cursor has to go somewhere and
-            // settle before holding still clicks, so engaging never clicks by itself.
-            dwellAnchor = (time, screen)
-            dwellLatched = true
+        if state == .dragReady {
+            out.append(commitDragIfMoved(hand, at: time, suppressed: suppressed, minimum: config.shake.dragCommitDistance))
+            if state == .dragReady && settledAfterSmallMove(hand, at: time) {
+                out.append(commitDragIfMoved(hand, at: time, suppressed: suppressed, minimum: config.shake.dragSmallDistance))
+            }
         }
-        out.append(updateDwell(screen, at: time, suppressed: suppressed))
+
+        // While a drag is armed but not yet pressed, the cursor still moves (the press lands
+        // where the left hand appeared and catches up).
+        out.append(emitMove(screen, suppressed: suppressed))
+        if state == .hover {
+            if dwellAnchor == nil {
+                // Just engaged (or the real mouse just let go): the cursor has to go somewhere and
+                // settle before holding still clicks, so engaging never clicks by itself.
+                dwellAnchor = (time, screen)
+                dwellLatched = true
+            }
+            out.append(updateDwell(screen, at: time, suppressed: suppressed))
+        }
         return out
     }
 
-    /// Scroll mode: the palm's movement along the wiggle's axis scrolls (content follows the
-    /// hand with natural scrolling); holding still ends it. The cursor stays put meanwhile.
-    private func updateShakeScroll(_ hand: HandFrame, at time: Double, suppressed: Bool) -> StepOutput {
-        var out = StepOutput()
+    // MARK: Drag
+
+    /// Press at the drag's start and catch up to the cursor once the right hand has moved
+    /// `minimum` hand sizes from where it was when the left hand appeared. Waiting for a clear
+    /// move is what lets a wiggle (zoom) start without pressing anything.
+    private func commitDragIfMoved(_ hand: HandFrame, at time: Double, suppressed: Bool, minimum: Double) -> StepOutput {
+        guard state == .dragReady, let press = dragPress else { return StepOutput() }
+        let moved = hand.motionCentroid.distance(to: press.centroid) / max(hand.handSize, 1e-4)
+        guard moved >= minimum else { return StepOutput() }
+        state = .dragging
+        dwellAnchor = nil
+        guard !suppressed else { return StepOutput() }
+        var out = StepOutput(intents: [.down(x: press.point.x, y: press.point.y)], events: [.dragStarted])
+        buttonDown = true
+        lastEmittedCursor = press.point
+        if let cursor { out.append(emitMove(cursor, suppressed: false)) }
+        return out
+    }
+
+    /// A small move followed by holding still also commits (dragging a slider a little).
+    private func settledAfterSmallMove(_ hand: HandFrame, at time: Double) -> Bool {
+        guard palmSpeed < config.shake.exitStillSpeed else {
+            dragSettleSince = nil
+            return false
+        }
+        if dragSettleSince == nil { dragSettleSince = time }
+        return time - (dragSettleSince ?? time) >= config.shake.dragSettleTime
+    }
+
+    // MARK: Scroll / zoom mode
+
+    private func enterShakeMode(zoom: Bool, wiggle: ShakeDetector.Detection, hand: HandFrame, at time: Double,
+                                suppressed: Bool) -> StepOutput {
+        var out = StepOutput(intents: momentum.stop())
+        // The wiggle moved the cursor around; work from where it started.
+        let anchor = cursorAt(wiggle.startTime)
+        if !suppressed { out.append(warp(to: anchor, at: time)) }
+        cursor = anchor
+        state = zoom ? .zooming : .scrolling
+        shakeScrollVertical = wiggle.vertical
+        shakeStillSince = nil
+        dwellAnchor = nil
+        scrollFilter.reset(to: mapper.boxPoint(fromCamera: hand.palmCenter), at: time)
+        scrollLastPalm = nil
+        scrollRemainder = .zero
+        guard !suppressed else { return out }
+        if zoom {
+            out.intents.append(.zoom(factor: 1, phase: .began))
+            out.events.append(.zoomStarted)
+        } else {
+            out.intents.append(.scroll(dx: 0, dy: 0, phase: .began))
+            out.events.append(.scrollStarted)
+        }
+        return out
+    }
+
+    /// The palm's movement along the wiggle's axis scrolls (content follows the hand with
+    /// natural scrolling) or zooms (up / right = in); holding still ends it. The cursor stays.
+    private func updateShakeMode(_ hand: HandFrame, at time: Double, suppressed: Bool) -> StepOutput {
         if palmSpeed < config.shake.exitStillSpeed {
             if shakeStillSince == nil { shakeStillSince = time }
             if time - (shakeStillSince ?? time) >= config.shake.exitStillTime {
-                return endShakeScroll(at: time)
+                return endShakeMode(hand, at: time)
             }
         } else {
             shakeStillSince = nil
@@ -91,34 +233,52 @@ extension PointerStateMachine {
             scrollLastPalm = palmBox
             scrollLastTime = time
         }
-        guard let last = scrollLastPalm, time > scrollLastTime else { return out }
+        guard let last = scrollLastPalm, time > scrollLastTime else { return StepOutput() }
+        let moved = palmBox - last
+
+        if state == .zooming {
+            // Box y grows downward, so "up" is negative y.
+            let along = shakeScrollVertical ? -moved.y : moved.x
+            let factor = exp(along * log(2) / max(config.shake.zoomDoublingBox, 0.01))
+            guard abs(log(factor)) > 0.002, !suppressed else { return StepOutput() }
+            return StepOutput(intents: [.zoom(factor: factor, phase: .changed)])
+        }
+
         let direction = config.naturalScrolling ? 1.0 : -1.0
-        let scale = config.scrollPointsPerBox * config.scrollSpeed * direction
-        var step = (palmBox - last) * scale
+        var step = moved * (config.scrollPointsPerBox * config.scrollSpeed * direction)
         if shakeScrollVertical { step.x = 0 } else { step.y = 0 }
         let delta = step + scrollRemainder
         // Sub-point deltas accumulate instead of being lost or sent as noise.
         if abs(delta.x) < 0.5 && abs(delta.y) < 0.5 {
             scrollRemainder = delta
-            return out
+            return StepOutput()
         }
         scrollRemainder = .zero
-        guard !suppressed else { return out }
-        out.intents.append(.scroll(dx: delta.x, dy: delta.y, phase: .changed))
-        return out
+        guard !suppressed else { return StepOutput() }
+        return StepOutput(intents: [.scroll(dx: delta.x, dy: delta.y, phase: .changed)])
     }
 
-    private func endShakeScroll(at time: Double) -> StepOutput {
-        state = .hover
+    /// Leave scroll or zoom mode. With the left hand still up, a new drag is armed from here.
+    private func endShakeMode(_ hand: HandFrame, at time: Double) -> StepOutput {
+        let wasZoom = state == .zooming
         shakeStillSince = nil
         shakeDetector.reset()
         // Keep the cursor where it was held instead of jumping to wherever the hand is now.
-        if let cursor {
-            reanchor(at: cursor, time: time)
-            // A finished scroll is not the start of a dwell click.
-            dwellAnchor = (time, cursor)
-            dwellLatched = true
+        if let cursor { reanchor(at: cursor, time: time) }
+        if modifierPresent, let cursor {
+            state = .dragReady
+            dragPress = (cursor, hand.motionCentroid, time)
+            dragSettleSince = nil
+        } else {
+            state = .hover
+            if let cursor {
+                // A finished scroll or zoom is not the start of a dwell click.
+                dwellAnchor = (time, cursor)
+                dwellLatched = true
+            }
         }
-        return StepOutput(intents: [.scroll(dx: 0, dy: 0, phase: .ended)], events: [.scrollEnded])
+        return wasZoom
+            ? StepOutput(intents: [.zoom(factor: 1, phase: .ended)], events: [.zoomEnded])
+            : StepOutput(intents: [.scroll(dx: 0, dy: 0, phase: .ended)], events: [.scrollEnded])
     }
 }

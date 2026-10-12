@@ -18,6 +18,9 @@ public enum PointerState: String, Codable, Equatable {
     case switchingApps
     /// Velocity mode: the hand is in a fast segment (a flick that may become a click or scroll).
     case flicking
+    /// Hold & wiggle: the left hand is up, so the right hand's next clear move drags (the
+    /// button isn't down yet; a wiggle now zooms instead).
+    case dragReady
 }
 
 struct PointerSample {
@@ -109,9 +112,9 @@ public final class PointerStateMachine {
     // Hand slots: the pointing hand and an optional second hand (for zoom).
     private var primary: GestureDetector
     private var secondary: GestureDetector
-    private var primaryLastPalm: Point2?
+    var primaryLastPalm: Point2?
     private var secondaryLastPalm: Point2?
-    private var primaryLastSeen: Double = -.infinity
+    var primaryLastSeen: Double = -.infinity
     private var secondarySeen = false
     private var lastHandSeen: Double = -.infinity
     private var hadHandRecently = false
@@ -173,6 +176,11 @@ public final class PointerStateMachine {
     var shakeDetector: ShakeDetector
     var shakeScrollVertical = true
     var shakeStillSince: Double?
+    var modifierSince: Double?
+    var modifierLastSeen: Double?
+    /// Where an armed drag presses: the cursor and right-hand centroid when the left hand came up.
+    var dragPress: (point: Point2, centroid: Point2, time: Double)?
+    var dragSettleSince: Double?
 
     // Real mouse takes priority.
     var outputSuppressedUntil: Double = -.infinity
@@ -185,6 +193,7 @@ public final class PointerStateMachine {
         self.config = config
         self.calibration = calibration
         self.router = DisplayRouter(displays: displays, dwell: config.displayJumpDwell)
+        self.router.pinLargest = config.stayOnLargestDisplay
         let displayID = displays.first?.id ?? "main"
         self.mapper = ActiveBoxMapper(profile: calibration.profile(for: displayID),
                                       boxScale: config.boxScale, edgeOvershoot: config.edgeOvershoot)
@@ -216,6 +225,7 @@ public final class PointerStateMachine {
         }
         config = newConfig
         router.dwell = newConfig.displayJumpDwell
+        router.pinLargest = newConfig.stayOnLargestDisplay
         smoother.updateConfig(newConfig)
         scrollFilter.parameters = newConfig.filter
         momentum.updateParameters(friction: Self.momentumFriction(newConfig), minSpeed: newConfig.momentumMinSpeed)
@@ -352,7 +362,9 @@ public final class PointerStateMachine {
         lastTime = time
         var out = StepOutput()
 
-        let (primaryHand, secondaryHand, primaryReplaced) = assignHands(frame.hands, at: time)
+        let (primaryHand, secondaryHand, primaryReplaced) = config.inputModel == .dwellShake
+            ? assignPointerAndModifier(frame.hands, at: time)
+            : assignHands(frame.hands, at: time)
         snapshot.hands = frame.hands
         if primaryReplaced && isEngaged {
             // A different hand took over the pointer (the old one left while another stayed in
@@ -396,7 +408,7 @@ public final class PointerStateMachine {
             hadHandRecently = true
             if state == .engaged { state = .hover }
             switch config.inputModel {
-            case .dwellShake: out.append(updatePointerShake(hand, at: time))
+            case .dwellShake: out.append(updatePointerShake(hand, modifier: secondaryHand, at: time))
             case .velocity: out.append(updatePointerVelocity(hand, secondary: secondaryHand, at: time))
             case .pose: out.append(updatePointer(hand, secondary: secondaryHand, at: time))
             }
@@ -479,7 +491,7 @@ public final class PointerStateMachine {
             palmHoldStart = nil
             return StepOutput()
         }
-        let busy = [.pinched, .dragging, .scrolling, .zooming, .switchingApps, .flicking].contains(state)
+        let busy = [.pinched, .dragging, .scrolling, .zooming, .switchingApps, .flicking, .dragReady].contains(state)
         guard !palmLatched, !busy, palmSpeed < config.palmStillnessNormalized else {
             palmHoldStart = nil
             return StepOutput()

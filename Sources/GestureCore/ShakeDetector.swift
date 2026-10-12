@@ -18,6 +18,21 @@ public struct ShakeParams: Equatable, Codable {
     /// …for this long.
     public var exitStillTime = 0.5
 
+    // Left hand = modifier (drag, and a wiggle zooms).
+    /// The left hand must be seen this long before it counts (a one-frame ghost doesn't)…
+    public var modifierAppearTime = 0.1
+    /// …and missing this long before it counts as gone (Vision drops hands for a frame).
+    public var modifierGoneTime = 0.25
+    /// With the left hand up, the right hand moving this far (hand sizes) presses and drags.
+    /// Smaller moves wait, so a wiggle can still become a zoom without pressing anything.
+    public var dragCommitDistance = 0.6
+    /// A smaller move (at least this far) commits when the hand then holds still, or when the
+    /// left hand drops.
+    public var dragSmallDistance = 0.15
+    public var dragSettleTime = 0.3
+    /// Zoom mode: moving the palm this far (fraction of the screen width) doubles the zoom.
+    public var zoomDoublingBox = 0.25
+
     public init() {}
 }
 

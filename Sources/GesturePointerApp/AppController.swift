@@ -538,7 +538,7 @@ final class AppController: MenuBarActions {
     var hotkeyDisplay: String { settings.hotkey.displayString }
     var engagedHint: String {
         switch settings.config.inputModel {
-        case .dwellShake: return "point, hold still 2 s to click, wiggle to scroll"
+        case .dwellShake: return "point, hold 2 s to click, wiggle to scroll, left hand up to drag"
         case .velocity: return "point, tap the air to click, flick to scroll"
         case .pose: return "point, pinch to click"
         }

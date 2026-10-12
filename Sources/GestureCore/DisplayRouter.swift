@@ -10,6 +10,8 @@ public struct DisplayRouter {
     public private(set) var displays: [DisplayInfo]
     public private(set) var currentID: String?
     public var dwell: Double
+    /// Always drive the largest display (by area): no edge jumps, no following the mouse.
+    public var pinLargest = false
 
     private var pendingEdge: (edge: Edge, since: Double)?
     private var armed = true
@@ -21,7 +23,13 @@ public struct DisplayRouter {
     }
 
     public var current: DisplayInfo? {
-        displays.first { $0.id == currentID } ?? displays.first
+        if pinLargest, let largest = largest { return largest }
+        return displays.first { $0.id == currentID } ?? displays.first
+    }
+
+    /// The display with the most area (the first one on a tie).
+    public var largest: DisplayInfo? {
+        displays.max { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height }
     }
 
     public mutating func setDisplays(_ newDisplays: [DisplayInfo]) {
@@ -44,6 +52,7 @@ public struct DisplayRouter {
 
     /// Feed the unclamped box-space pointer. Returns the new display when a jump happens.
     public mutating func update(box: Point2, at time: Double) -> DisplayInfo? {
+        guard !pinLargest else { return nil }
         let margin = 0.0
         let edge: Edge?
         if box.x < margin { edge = .left }
