@@ -416,6 +416,50 @@ final class AppController: MenuBarActions {
         }
     }
 
+    // MARK: Windows
+
+    func showWelcome() {
+        if let welcomeWindow {
+            welcomeWindow.makeKeyAndOrderFront(nil)
+            NSApp.activate()
+            return
+        }
+        let view = WelcomeView(
+            monitor: permissionMonitor, settings: settings, cameras: Camera.availableCameras(),
+            onCalibrate: { [weak self] in
+                self?.finishOnboarding()
+                self?.startCalibration()
+            },
+            onFinish: { [weak self] in
+                self?.finishOnboarding()
+                self?.overlay?.toast("Raise both open palms to engage", symbol: "hand.raised")
+            })
+        let window = NSWindow(contentViewController: NSHostingController(rootView: view))
+        window.title = "Wisp Setup"
+        window.styleMask = [.titled, .closable]
+        window.isReleasedWhenClosed = false
+        window.center()
+        welcomeWindow = window
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate()
+    }
+
+    private func finishOnboarding() {
+        settings.hasCompletedOnboarding = true
+        welcomeWindow?.close()
+        welcomeWindow = nil
+        refreshPermissionStatus()
+    }
+
+    // MARK: MenuBarActions
+
+    var menuStatus: MenuBarStatus {
+        if Permissions.cameraState != .granted || !axGranted { return .needsPermission }
+        if !settings.enabled { return .off }
+        return engaged ? .engaged : .standby
+    }
+
+    var isEnabled: Bool { settings.enabled }
     var isRecording: Bool { recordingURL != nil }
     var cameras: [CameraInfo] { Camera.availableCameras() }
     var selectedCameraID: String? { settings.cameraID }
