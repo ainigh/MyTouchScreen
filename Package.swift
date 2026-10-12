@@ -10,6 +10,7 @@ let package = Package(
         .executable(name: "GesturePointer", targets: ["GesturePointerApp"]),
         .library(name: "GestureCore", targets: ["GestureCore"]),
         .executable(name: "gesture-replay", targets: ["GestureReplay"]),
+        .executable(name: "tune", targets: ["Tune"]),
     ],
     targets: [
         // Foundation-only gesture brain. Builds and tests on Linux.
@@ -19,6 +20,8 @@ let package = Package(
         .executableTarget(name: "GesturePointerApp", dependencies: ["GestureCore"]),
         // Cross-platform replay tool: run a recording through GestureCore and print the result.
         .executableTarget(name: "GestureReplay", dependencies: ["GestureCore"]),
+        // Velocity-mode tuning: confusion matrix and grid search over a labeled recording.
+        .executableTarget(name: "Tune", dependencies: ["GestureCore"]),
         .testTarget(name: "GestureCoreTests", dependencies: ["GestureCore"]),
     ]
 )

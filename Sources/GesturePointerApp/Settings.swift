@@ -23,6 +23,8 @@ final class AppSettings: ObservableObject {
         static let onboarded = "hasCompletedOnboarding"
         static let enabled = "enabled"
         static let previewCorner = "previewCorner"
+        static let showWhyNot = "showWhyNot"
+        static let scrollFollowsSystem = "scrollFollowsSystem"
     }
 
     private let defaults: UserDefaults
@@ -44,6 +46,10 @@ final class AppSettings: ObservableObject {
     @Published var enabled: Bool { didSet { defaults.set(enabled, forKey: Keys.enabled); changed() } }
     /// 0 top-left, 1 top-right, 2 bottom-right, 3 bottom-left.
     @Published var previewCorner: Int { didSet { defaults.set(previewCorner, forKey: Keys.previewCorner); changed() } }
+    /// Velocity mode debug readout: the last segment's numbers and the rule that fired.
+    @Published var showWhyNot: Bool { didSet { defaults.set(showWhyNot, forKey: Keys.showWhyNot); changed() } }
+    /// Scroll direction follows System Settings → Trackpad/Mouse → Natural scrolling.
+    @Published var scrollFollowsSystem: Bool { didSet { defaults.set(scrollFollowsSystem, forKey: Keys.scrollFollowsSystem); changed() } }
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -60,6 +66,22 @@ final class AppSettings: ObservableObject {
         hasCompletedOnboarding = defaults.bool(forKey: Keys.onboarded)
         enabled = defaults.object(forKey: Keys.enabled) as? Bool ?? true
         previewCorner = defaults.object(forKey: Keys.previewCorner) as? Int ?? 3
+        showWhyNot = defaults.object(forKey: Keys.showWhyNot) as? Bool ?? false
+        scrollFollowsSystem = defaults.object(forKey: Keys.scrollFollowsSystem) as? Bool ?? true
+    }
+
+    /// The system's natural-scrolling choice (the global `com.apple.swipescrolldirection`
+    /// default; absent means the macOS default, natural).
+    static var systemNaturalScrolling: Bool {
+        UserDefaults.standard.object(forKey: "com.apple.swipescrolldirection") as? Bool ?? true
+    }
+
+    /// The config the pipeline runs: the saved one, with the scroll direction taken from the
+    /// system when that's what the user chose.
+    var effectiveConfig: GestureConfig {
+        var c = config
+        if scrollFollowsSystem { c.naturalScrolling = Self.systemNaturalScrolling }
+        return c
     }
 
     private func changed() { onChange?() }
@@ -90,6 +112,8 @@ final class AppSettings: ObservableObject {
         showStatusGlyph = true
         zoomStyle = .keyboard
         hotkey = .default
+        showWhyNot = false
+        scrollFollowsSystem = true
     }
 
     // MARK: Export / import
@@ -102,6 +126,8 @@ final class AppSettings: ObservableObject {
             "soundsEnabled": soundsEnabled,
             "showStatusGlyph": showStatusGlyph,
             "zoomStyle": zoomStyle.rawValue,
+            "showWhyNot": showWhyNot,
+            "scrollFollowsSystem": scrollFollowsSystem,
             "hotkey": ["keyCode": hotkey.keyCode, "modifiers": hotkey.modifiers],
         ]
         let root: [String: Any] = [
@@ -133,6 +159,8 @@ final class AppSettings: ObservableObject {
             if let v = app["soundsEnabled"] as? Bool { soundsEnabled = v }
             if let v = app["showStatusGlyph"] as? Bool { showStatusGlyph = v }
             if let v = app["zoomStyle"] as? String, let z = ZoomStyle(rawValue: v) { zoomStyle = z }
+            if let v = app["showWhyNot"] as? Bool { showWhyNot = v }
+            if let v = app["scrollFollowsSystem"] as? Bool { scrollFollowsSystem = v }
             if let h = app["hotkey"] as? [String: Any],
                let code = (h["keyCode"] as? NSNumber)?.uint32Value,
                let mods = (h["modifiers"] as? NSNumber)?.uint32Value {
@@ -164,7 +192,7 @@ struct SettingsView: View {
                             onLaunchAtLoginChange: onLaunchAtLoginChange)
                 .tabItem { Label("General", systemImage: "gearshape") }
         }
-        .frame(width: 520, height: 470)
+        .frame(width: 540, height: 540)
     }
 }
 
@@ -218,8 +246,9 @@ private struct PointerSettings: View {
             }
             Section("Precision") {
                 Toggle("Slow down slow movements", isOn: $settings.config.precisionEnabled)
-                ValueSlider(title: "Precision gain", value: $settings.config.precisionGain,
-                            range: 0.2...1.0, format: "%.2f×")
+                ValueSlider(title: "Precision slow-gain", value: $settings.config.precisionGain,
+                            range: 0.2...1.0, format: "%.2f×",
+                            help: "Below a slow speed the cursor moves at this fraction of your hand's speed.")
                     .disabled(!settings.config.precisionEnabled)
             }
         }
@@ -231,27 +260,46 @@ private struct PointerSettings: View {
 private struct GestureSettings: View {
     @ObservedObject var settings: AppSettings
 
+    private var isVelocity: Bool { settings.config.inputModel == .velocity }
+
     var body: some View {
         Form {
-            Section("Pinch") {
-                ValueSlider(title: "Pinch closes at", value: $settings.config.pinchEnter, range: 0.15...0.5,
-                            help: "Thumb-to-finger distance (in hand sizes) that counts as a pinch. Calibration sets this per display.")
-                ValueSlider(title: "Pinch opens at", value: $settings.config.pinchExit, range: 0.25...0.8)
-                ValueSlider(title: "Hold to drag", value: $settings.config.dragHoldDuration,
-                            range: 0.15...0.6, format: "%.2f s")
+            Section("Input model") {
+                Picker("Click and scroll with", selection: $settings.config.inputModel) {
+                    Text("Velocity (flick)").tag(InputModel.velocity)
+                    Text("Pose (pinch)").tag(InputModel.pose)
+                }
+                .pickerStyle(.segmented)
+                Text(isVelocity
+                     ? "Your hand is the mouse: a quick tap from a still hand clicks, a long flick scrolls, tap then move drags."
+                     : "Pinch thumb and index to click, hold the pinch to drag, make a fist and move to scroll.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
-            Section("Scroll") {
-                ValueSlider(title: "Scroll speed", value: $settings.config.scrollSpeed, range: 0.25...4, format: "%.2f×")
-                Toggle("Natural direction (content follows your fist)", isOn: $settings.config.naturalScrolling)
-                Toggle("Momentum", isOn: $settings.config.momentumEnabled)
+            if isVelocity {
+                VelocityGestureSettings(settings: settings)
+            } else {
+                Section("Pinch") {
+                    ValueSlider(title: "Pinch closes at", value: $settings.config.pinchEnter, range: 0.15...0.5,
+                                help: "Thumb-to-finger distance (in hand sizes) that counts as a pinch. Calibration sets this per display.")
+                    ValueSlider(title: "Pinch opens at", value: $settings.config.pinchExit, range: 0.25...0.8)
+                    ValueSlider(title: "Hold to drag", value: $settings.config.dragHoldDuration,
+                                range: 0.15...0.6, format: "%.2f s")
+                }
+                Section("Scroll") {
+                    ValueSlider(title: "Scroll speed", value: $settings.config.scrollSpeed, range: 0.25...4, format: "%.2f×")
+                    ScrollDirectionToggles(settings: settings)
+                    Toggle("Momentum", isOn: $settings.config.momentumEnabled)
+                }
             }
             Section("More gestures") {
-                Toggle("Two-hand pinch to zoom", isOn: $settings.config.zoomEnabled)
+                Toggle(isVelocity ? "Two-hand spread to zoom" : "Two-hand pinch to zoom", isOn: $settings.config.zoomEnabled)
                 Picker("Zoom sends", selection: $settings.zoomStyle) {
                     ForEach(ZoomStyle.allCases, id: \.self) { Text($0.label).tag($0) }
                 }
                 .disabled(!settings.config.zoomEnabled)
-                Toggle("Thumb + ring pinch: app switcher (⌘⇥)", isOn: $settings.config.appSwitcherEnabled)
+                if !isVelocity {
+                    Toggle("Thumb + ring pinch: app switcher (⌘⇥)", isOn: $settings.config.appSwitcherEnabled)
+                }
                 Toggle("Dwell to click", isOn: $settings.config.dwellClickEnabled)
                 ValueSlider(title: "Dwell time", value: $settings.config.dwellClickDelay, range: 0.4...2.0, format: "%.2f s")
                     .disabled(!settings.config.dwellClickEnabled)
@@ -268,6 +316,116 @@ private struct GestureSettings: View {
             }
         }
         .formStyle(.grouped)
+    }
+}
+
+/// Natural direction, or follow whatever System Settings says.
+@MainActor
+private struct ScrollDirectionToggles: View {
+    @ObservedObject var settings: AppSettings
+
+    var body: some View {
+        Toggle("Follow the system scroll direction", isOn: $settings.scrollFollowsSystem)
+        Toggle("Natural direction (content follows your hand)", isOn: Binding(
+            get: { settings.scrollFollowsSystem ? AppSettings.systemNaturalScrolling : settings.config.naturalScrolling },
+            set: { settings.config.naturalScrolling = $0 }))
+            .disabled(settings.scrollFollowsSystem)
+    }
+}
+
+/// Velocity mode: taps, scroll flicks, and every `VelocityParams` field under "Advanced".
+@MainActor
+private struct VelocityGestureSettings: View {
+    @ObservedObject var settings: AppSettings
+    @State private var showsAdvanced = false
+
+    private struct Param {
+        let title: String
+        let key: WritableKeyPath<VelocityParams, Double>
+        let range: ClosedRange<Double>
+        let format: String
+    }
+
+    /// Velocities are hand-space units per second; distances are hand sizes (× hs).
+    private static var params: [Param] {
+        [
+            Param(title: "Fast above (vEnter)", key: \.vEnter, range: 0.3...2.5, format: "%.2f /s"),
+            Param(title: "Slow below (vExit)", key: \.vExit, range: 0.1...1.5, format: "%.2f /s"),
+            Param(title: "Longest segment", key: \.maxSegment, range: 0.2...1.0, format: "%.2f s"),
+            Param(title: "Tap: longest", key: \.clickMaxDuration, range: 0.08...0.4, format: "%.2f s"),
+            Param(title: "Tap: largest displacement", key: \.clickMaxDisp, range: 0.3...2.0, format: "%.2f × hs"),
+            Param(title: "Tap: longest path", key: \.clickMaxPath, range: 0.5...3.0, format: "%.2f × hs"),
+            Param(title: "Still before a tap: below", key: \.preClickStillV, range: 0.05...0.8, format: "%.2f /s"),
+            Param(title: "Still before a tap: for", key: \.preClickStillTime, range: 0...0.3, format: "%.2f s"),
+            Param(title: "Scroll: shortest flick", key: \.scrollMinDisp, range: 0.8...4.0, format: "%.2f × hs"),
+            Param(title: "Scroll: peak speed without return", key: \.scrollMinPeak, range: 0.8...4.0, format: "%.2f /s"),
+            Param(title: "Counts as returned at", key: \.returnFraction, range: 0.1...0.9, format: "%.2f"),
+            Param(title: "Axis ratio", key: \.axisRatio, range: 1.0...4.0, format: "%.2f"),
+            Param(title: "Double click: within", key: \.doubleClickWindow, range: 0.1...0.8, format: "%.2f s"),
+            Param(title: "Double click: distance", key: \.doubleClickDisp, range: 0.1...2.0, format: "%.2f × hs"),
+            Param(title: "Drag: start within", key: \.dragStartWindow, range: 0.1...1.0, format: "%.2f s"),
+            Param(title: "Drag: moving above", key: \.dragMoveMin, range: 0.05...1.0, format: "%.2f /s"),
+            Param(title: "Drag: moving for", key: \.dragConfirmTime, range: 0.03...0.4, format: "%.2f s"),
+            Param(title: "Drop: still below", key: \.dragStillV, range: 0.02...0.5, format: "%.2f /s"),
+            Param(title: "Drop: still for", key: \.dragStillTime, range: 0.1...1.5, format: "%.2f s"),
+            Param(title: "Two hands together within", key: \.twoHandWindow, range: 0.05...0.5, format: "%.2f s"),
+            Param(title: "Coherence angle", key: \.coherenceAngle, range: 10...120, format: "%.0f°"),
+            Param(title: "Glitch jump", key: \.glitchDisp, range: 1.0...6.0, format: "%.1f × hs"),
+            Param(title: "Refractory", key: \.refractory, range: 0...0.5, format: "%.2f s"),
+            Param(title: "Minimum confidence", key: \.minConfidence, range: 0...1, format: "%.2f"),
+        ]
+    }
+
+    private func binding(_ key: WritableKeyPath<VelocityParams, Double>) -> Binding<Double> {
+        Binding(get: { settings.config.velocity[keyPath: key] },
+                set: { settings.config.velocity[keyPath: key] = $0 })
+    }
+
+    var body: some View {
+        Section("Taps") {
+            Picker("Left click is a tap", selection: $settings.config.velocity.clickAxis) {
+                Text("Up or down").tag(ClickAxis.vertical)
+                Text("Sideways").tag(ClickAxis.horizontal)
+                Text("Any direction").tag(ClickAxis.any)
+            }
+            Toggle("Cross-direction tap right-clicks", isOn: $settings.config.velocity.rightClickEnabled)
+                .disabled(settings.config.velocity.clickAxis == .any)
+            Toggle("Tap, then move to drag", isOn: $settings.config.velocity.dragEnabled)
+        }
+        Section("Scroll") {
+            ValueSlider(title: "Scroll gain", value: $settings.config.velocity.scrollGain, range: 300...2500,
+                        format: "%.0f", help: "Points per second of scroll for each unit of flick speed.")
+            ValueSlider(title: "Momentum", value: $settings.config.velocity.momentumDecay, range: 0.85...0.98,
+                        format: "%.3f", help: "Speed kept per 1/60 s while gliding. Higher glides further.")
+            ScrollDirectionToggles(settings: settings)
+        }
+        Section("Feedback") {
+            Toggle("Show “why not?” readout", isOn: $settings.showWhyNot)
+            Text("Shows the last flick's duration, distance, path, peak speed, axis and the rule that decided. Use it to report a gesture that didn't do what you expected.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        Section {
+            DisclosureGroup("Advanced", isExpanded: $showsAdvanced) {
+                Stepper("Frames above vEnter to start: \(settings.config.velocity.framesEnter)",
+                        value: $settings.config.velocity.framesEnter, in: 1...6)
+                Stepper("Frames below vExit to end: \(settings.config.velocity.framesExit)",
+                        value: $settings.config.velocity.framesExit, in: 1...8)
+                Text("Frames are counted at 60 fps; a 30 fps camera needs half as many.")
+                    .font(.caption).foregroundStyle(.secondary)
+                ForEach(Self.params.indices, id: \.self) { index in
+                    let param = Self.params[index]
+                    ValueSlider(title: param.title, value: binding(param.key), range: param.range, format: param.format)
+                }
+                Button("Reset to tuned defaults") {
+                    var fresh = VelocityParams()
+                    // The switches above are preferences, not tuning.
+                    fresh.clickAxis = settings.config.velocity.clickAxis
+                    fresh.rightClickEnabled = settings.config.velocity.rightClickEnabled
+                    fresh.dragEnabled = settings.config.velocity.dragEnabled
+                    settings.config.velocity = fresh
+                }
+            }
+        }
     }
 }
 

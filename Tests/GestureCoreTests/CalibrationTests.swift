@@ -108,7 +108,7 @@ final class CalibrationTests: XCTestCase {
         profile.isCalibrated = true
         profile.pinchEnter = 0.2
         profile.pinchExit = 0.3
-        let machine = PointerStateMachine(displays: [testDisplay],
+        let machine = PointerStateMachine(config: .pose, displays: [testDisplay],
                                           calibration: CalibrationSet(profiles: ["main": profile]))
         _ = machine.setEngaged(true, at: 0)
         // A half pinch (~0.4 normalized) would click with defaults? No: 0.4 > 0.35. Use a

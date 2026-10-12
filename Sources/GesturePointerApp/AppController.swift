@@ -36,6 +36,8 @@ final class AppController: MenuBarActions {
     private var welcomeWindow: NSWindow?
     private var settingsWindow: NSWindow?
     private var replayer: Replayer?
+    private var guided: GuidedRecording?
+    private var guidedRecordingStep: TuningScript.Step?
 
     private var cameraMode: CameraMode = .off
     private var engaged = false
@@ -105,7 +107,9 @@ final class AppController: MenuBarActions {
             return
         }
         if let path = options.recordPath {
-            startRecording(to: URL(fileURLWithPath: (path as NSString).expandingTildeInPath))
+            let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+            startRecording(to: url)
+            if options.script { startGuidedSession(url) }
         }
         if !settings.hasCompletedOnboarding || Permissions.cameraState != .granted || !axGranted {
             showWelcome()
@@ -140,7 +144,10 @@ final class AppController: MenuBarActions {
     }
 
     func shutdown() {
-        pipeline.shutdown()
+        // A guided session cut short still keeps the labels of the prompts it finished.
+        let segments = guided?.stop() ?? []
+        guided = nil
+        pipeline.shutdown(segments: segments)
         camera.stop()
         hotkey.unregister()
         if let mouseMonitor { NSEvent.removeMonitor(mouseMonitor) }
@@ -166,13 +173,19 @@ final class AppController: MenuBarActions {
 
     // MARK: Settings
 
-    private func applySettings() {
-        // Only push real changes: re-applying a config resets the filters and scroll momentum,
-        // which would visibly hitch a gesture whenever an unrelated setting (preview corner) moves.
-        if appliedConfig?.config != settings.config || appliedConfig?.zoomStyle != settings.zoomStyle {
-            appliedConfig = (settings.config, settings.zoomStyle)
-            pipeline.update(config: settings.config, zoomStyle: settings.zoomStyle)
+    /// Only push real changes: re-applying a config resets the filters and scroll momentum,
+    /// which would visibly hitch a gesture whenever an unrelated setting (preview corner) moves.
+    private func pushConfigIfChanged() {
+        let config = settings.effectiveConfig
+        if appliedConfig?.config != config || appliedConfig?.zoomStyle != settings.zoomStyle {
+            appliedConfig = (config, settings.zoomStyle)
+            pipeline.update(config: config, zoomStyle: settings.zoomStyle)
         }
+    }
+
+    private func applySettings() {
+        pushConfigIfChanged()
+        overlay?.showWhyNot = settings.showWhyNot
         if appliedCalibration != settings.calibration {
             appliedCalibration = settings.calibration
             pipeline.update(calibration: settings.calibration)
@@ -226,7 +239,8 @@ final class AppController: MenuBarActions {
 
     private func desiredCameraMode() -> CameraMode {
         guard options.replayPath == nil, Permissions.cameraState == .granted else { return .off }
-        if calibration != nil || engaged { return .full }
+        // A guided recording needs every frame, even if the palm disengaged meanwhile.
+        if calibration != nil || engaged || guided != nil { return .full }
         guard settings.enabled else { return .off }
         // Standby watches for the engage palm (and feeds the preview) at a few fps.
         if settings.config.palmEngageEnabled || settings.showPreview { return .standby }
@@ -258,6 +272,7 @@ final class AppController: MenuBarActions {
 
     private func handleUpdate(_ snapshot: PointerSnapshot, _ events: [PointerEvent]) {
         lastSnapshot = snapshot
+        if let session = guided, !session.isRunning, !snapshot.hands.isEmpty { session.start() }
         for event in events { handle(event, snapshot: snapshot) }
         overlay?.update(snapshot, status: menuStatus)
         preview?.update(hands: snapshot.hands, primaryIndex: snapshot.primaryHandIndex)
@@ -285,12 +300,13 @@ final class AppController: MenuBarActions {
             overlay?.toast(text, symbol: "hand.raised", tint: Theme.idle)
             removeMouseMonitor()
             updateCameraMode()
+        // During a guided session nothing is posted and the click sound marks each recording.
         case .clicked, .rightClicked, .dwellClicked:
-            sounds.play(.click)
+            if guided == nil { sounds.play(.click) }
         case .dragStarted:
-            sounds.play(.dragStart)
+            if guided == nil { sounds.play(.dragStart) }
         case .dragEnded:
-            sounds.play(.drop)
+            if guided == nil { sounds.play(.drop) }
         case .scrollEnded:
             if snapshot.momentumActive { sounds.play(.scrollFade) }
         case .externalMouseTookOver:
@@ -299,6 +315,8 @@ final class AppController: MenuBarActions {
                 lastTakeoverToast = now
                 overlay?.toast("Mouse in control", symbol: "computermouse", tint: Theme.idle)
             }
+        case .segmentClassified(let report):
+            overlay?.flash(report)
         case .scrollStarted, .zoomStarted, .zoomEnded, .appSwitcherOpened, .appSwitcherClosed, .displayChanged:
             break
         }
@@ -346,6 +364,8 @@ final class AppController: MenuBarActions {
             axGranted = ax
             if ax { overlay?.toast("Accessibility granted", symbol: "checkmark.circle.fill") }
         }
+        // The system scroll direction may have changed in System Settings.
+        pushConfigIfChanged()
         updatePreview()
         updateCameraMode()
         updateStatus()
@@ -397,6 +417,70 @@ final class AppController: MenuBarActions {
             overlay?.toast("Can't record: \(error.localizedDescription)", symbol: "xmark.octagon", tint: Theme.warning)
             print("error: can't record to \(url.path): \(error.localizedDescription)")
         }
+    }
+
+    // MARK: Guided tuning session
+
+    private func startGuidedSession(_ url: URL) {
+        guard recordingURL != nil else { return }   // startRecording already said why
+        guard Permissions.cameraState == .granted else {
+            print("error: the guided session needs camera access. Grant it in the Setup window, then run again.")
+            overlay?.toast("Grant camera access, then run --script again", symbol: "video.slash", tint: Theme.warning)
+            return
+        }
+        // Flicks during the session must not click whatever is under the cursor.
+        pipeline.configureOutput(postsEvents: false, logsIntents: false, printsFrames: false)
+        if !settings.enabled { settings.enabled = true }
+        let session = GuidedRecording()
+        session.onPhase = { [weak self] phase in self?.showGuided(phase) }
+        session.onFinish = { [weak self] segments in self?.finishGuidedSession(segments) }
+        guided = session
+        pipeline.setEngaged(true, reason: .hotkey)
+        updateCameraMode()
+        print(String(format: "Guided session: %d prompts, about %.0f minutes. Recording to %@", session.script.steps.count,
+                     session.script.duration / 60, url.path))
+        // The clock starts on the first frame with a hand (see handleUpdate).
+        overlay?.showPrompt("Raise your pointing hand to begin", detail: "The guided session starts when Wisp sees it")
+    }
+
+    private func showGuided(_ phase: TuningScript.Phase) {
+        switch phase {
+        case .prompt(let step):
+            guidedRecordingStep = nil
+            overlay?.showPrompt(step.label.prompt, detail: "\(step.repetition) of \(step.repetitions) — get ready")
+        case let .recording(step, remaining):
+            if guidedRecordingStep != step {
+                guidedRecordingStep = step
+                sounds.play(.click)
+            }
+            overlay?.showPrompt(step.label.prompt, detail: String(format: "%d of %d — recording %.0f s",
+                                                                  step.repetition, step.repetitions, remaining.rounded(.up)),
+                                recording: true)
+        case .pause(let next):
+            guidedRecordingStep = nil
+            overlay?.showPrompt(next.label.prompt, detail: "Next: \(next.repetition) of \(next.repetitions)")
+        case .finished:
+            overlay?.showPrompt(nil)
+        }
+    }
+
+    private func finishGuidedSession(_ segments: [LabeledSegment]) {
+        guided = nil
+        guidedRecordingStep = nil
+        overlay?.showPrompt(nil)
+        // Don't hand the real cursor to a hand that was only performing prompts.
+        pipeline.setEngaged(false, reason: .menu)
+        pipeline.configureOutput(postsEvents: !options.dryRun, logsIntents: options.dryRun,
+                                 printsFrames: options.noOverlay)
+        guard let url = recordingURL else { return }
+        recordingURL = nil
+        pipeline.stopRecording(segments: segments) { [weak self] count in
+            print("Guided session saved: \(count) frames, \(segments.count) labeled segments in \(url.path)")
+            print("Next: swift run -c release tune \(url.path)")
+            self?.overlay?.toast("Session saved — \(segments.count) gestures", symbol: "checkmark.circle.fill")
+            NSWorkspace.shared.activateFileViewerSelecting([url])
+        }
+        updateCameraMode()
     }
 
     // MARK: Windows
@@ -452,6 +536,9 @@ final class AppController: MenuBarActions {
         return launchAtLogin.isEnabled
     }
     var hotkeyDisplay: String { settings.hotkey.displayString }
+    var engagedHint: String {
+        settings.config.inputModel == .velocity ? "point, tap the air to click, flick to scroll" : "point, pinch to click"
+    }
     var versionLine: String { updater.versionLine }
     var updateState: Updater.State { updater.state }
 
@@ -545,6 +632,10 @@ final class AppController: MenuBarActions {
     }
 
     func toggleRecording() {
+        if let session = guided {
+            finishGuidedSession(session.stop())
+            return
+        }
         if let url = recordingURL {
             recordingURL = nil
             pipeline.stopRecording { [weak self] count in

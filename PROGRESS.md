@@ -60,6 +60,17 @@ Resume from the first unchecked item. Tick only after verification per `CLAUDE.m
 - [x] DECISIONS.md complete, dropped items explained
 - [x] Release commit
 
+## M7 — Velocity gestures (SPEC-M7)
+- [x] `VelocityParams`, centroid + velocity estimation, segment tracker, `VelocityClassifier` in GestureCore
+- [x] Composite gestures: double click, drag, two-hand zoom; refractory; noise rejection
+- [x] Synthetic generator produces every labeled class with timing/noise variation
+- [x] Tests: each class classified correctly ≥ 95% over 200 synthetic samples; `rest` and `jitter` produce zero intents; `reposition-fast` produces zero clicks/scrolls; click lands at anchor; scroll momentum decays monotonically and stops on new segment; frame-rate independence (same input at 30 and 60 fps → same intents)
+- [x] `tune` executable: confusion matrix, stats, grid search; Linux-buildable
+- [x] App: input-model switch, scroll output with phases at display rate, cursor warp, overlay trail/ripples, "why not?" debug, guided `--record --script`
+- [x] `tools/tune.md` written; Settings updated; DECISIONS.md updated
+- [x] Linux `swift build` + `swift test` green; `tools/check.sh` green; Mac files reviewed
+- [x] Committed: `M7: velocity gestures`
+
 ## Owner handoff (for the human, after Claude is done)
 1. `xcode-select --install` if not already done.
 2. `make app && make run`.
@@ -68,6 +79,7 @@ Resume from the first unchecked item. Tick only after verification per `CLAUDE.m
 5. Optionally run with `--record session.json` for a minute and hand the file back for tuning.
 
 ## Notes / blockers
+- M7 (Oct 2026): 105 tests green on Linux (Swift 6.0.3), full `swift build` (incl. the new `tune` target) and check.sh green. Velocity accuracy on 200 synthetic samples per class, half at 30 fps: click 197, right-click 199, double-click 193, scroll-up 200, scroll-down 200, reposition-fast/slow 200, fine-target 200, drag 199, rest 200, jitter 200, out-of-frame 200, zoom 200. Thresholds are tuned against synthetic hands only — no owner recording yet (see "Owner loop after M7" in SPEC-M7). Mac layer (input-model switch, overlay trail/flash/why-not readout, settings, guided `--record --script`) written and independently reviewed (no compile issues found; guided-session warm-up, sounds, disengage-on-finish, run-loop mode and overlay-rebuild fixes applied) but NOT compiled — no macOS here.
 - Fix pass (Oct 2026): 77 tests green on Linux (Swift 6.0.3), full `swift build` and check.sh green. Core: tick timer only while gliding (`needsTicks`), settings change mid-glide no longer drops momentum-ended (regression test). Mac (review only, not compiled): launch-at-login toggle reflects the real state after a failed change, camera restarts after runtime errors with backoff, reconnecting the chosen camera picks it back up.
 - Bug-hunt pass (Oct 2026): 75 tests green on Linux (Swift 6.0.3). Core: stuck button/scroll on hand swap, unmatched mouse-up, real mouse taking over mid-drag, NaN/trap guards for imported settings and replay aspect. Mac (review only, not compiled): delegate lifetime + SIGINT/SIGTERM quit path, calibration window never closing, real mouse blocked during synthetic drag, camera fps exception, mirroring pinned off, kill hotkey with revoked camera, quit-time stray clicks, settings re-apply hitch, updater bundle name + commit/codesign verification, CI script injection, BSD-sed check.sh.
 - Mac layer second review (independent, compiler-focused) found and fixed: an inaccessible memberwise init, `log` shadowed by a property, `Joint` ambiguous with macOS 15 SDK's Vision, `Rect` ambiguous with MacTypes, SwiftUI views needing @MainActor on the macOS 14 SDK. Plus runtime fixes (no camera prompt before onboarding, NaN guard, queue-confined output options, hotkey toggles from the machine's own state).

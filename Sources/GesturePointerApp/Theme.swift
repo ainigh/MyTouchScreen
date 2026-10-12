@@ -28,6 +28,7 @@ enum Theme {
         case .scrolling: return scrolling
         case .zooming: return zooming
         case .switchingApps: return dragging
+        case .flicking: return accent
         }
     }
 

@@ -4,7 +4,8 @@ import GestureCore
 import QuartzCore
 
 /// One transparent, click-through window per screen, above everything, drawing the cursor halo,
-/// progress rings, the display-jump edge glow, toasts and the standby glyph.
+/// progress rings, the display-jump edge glow, toasts and the standby glyph — and in Velocity
+/// mode the flick trail, the result flash, the "why not?" readout and guided-session prompts.
 ///
 /// All methods are main-thread only. Updates arrive at camera rate; layer changes that track
 /// the hand are made without implicit animations (they would add ~250 ms of visual lag).
@@ -12,6 +13,15 @@ import QuartzCore
 final class OverlayController {
     private var windows: [(screen: NSScreen, window: NSWindow, view: OverlayView)] = []
     var showStatusGlyph = true
+    /// Velocity mode debug readout (Settings → Gestures → Feedback).
+    var showWhyNot = false {
+        didSet {
+            guard showWhyNot != oldValue else { return }
+            shownSegment = nil
+            if !showWhyNot { for entry in windows { entry.view.showReadout(nil) } }
+        }
+    }
+    private var shownSegment: SegmentReport?
 
     init() {
         rebuild()
@@ -20,6 +30,7 @@ final class OverlayController {
     /// Recreate windows to match the current screens (called on display changes).
     func rebuild() {
         for entry in windows { entry.window.orderOut(nil) }
+        shownSegment = nil
         windows = NSScreen.screens.map { screen in
             let window = NSWindow(contentRect: screen.frame, styleMask: .borderless, backing: .buffered, defer: false)
             window.backgroundColor = .clear
@@ -34,6 +45,9 @@ final class OverlayController {
             window.setFrame(screen.frame, display: false)
             window.orderFrontRegardless()
             return (screen, window, view)
+        }
+        if let prompt = lastPrompt {
+            windows.first?.view.showPrompt(prompt.title, detail: prompt.detail, recording: prompt.recording)
         }
     }
 
@@ -65,10 +79,54 @@ final class OverlayController {
             let glyph: NSColor? = (showStatusGlyph && !snapshot.isEngaged && entry.screen == mainScreen)
                 ? (status == .needsPermission ? Theme.warning : (status == .off ? nil : Theme.idle))
                 : nil
+            let trail = snapshot.isEngaged ? snapshot.segmentTrail.compactMap { local(CGPoint(x: $0.x, y: $0.y), on: entry.screen) } : []
             entry.view.render(halo: halo, glyph: glyph,
-                              edgeProgress: halo != nil ? snapshot.displayJumpProgress : 0)
+                              edgeProgress: halo != nil ? snapshot.displayJumpProgress : 0, trail: trail)
+        }
+
+        if showWhyNot, snapshot.lastSegment != shownSegment {
+            shownSegment = snapshot.lastSegment
+            windows.first?.view.showReadout(snapshot.lastSegment.map(Self.readout))
         }
     }
+
+    /// A global (top-left) point in `screen`'s view coordinates, if it is on that screen.
+    private func local(_ global: CGPoint, on screen: NSScreen) -> CGPoint? {
+        let cocoa = Displays.cocoaPoint(fromGlobal: global)
+        // Trail points just past the edge still belong to the screen the trail is on.
+        guard NSMouseInRect(cocoa, screen.frame.insetBy(dx: -40, dy: -40), false) else { return nil }
+        return CGPoint(x: cocoa.x - screen.frame.minX, y: cocoa.y - screen.frame.minY)
+    }
+
+    /// Velocity mode: show what a flick was classified as, at the spot it started from.
+    func flash(_ report: SegmentReport) {
+        guard let anchor = report.anchor else { return }
+        let global = CGPoint(x: anchor.x, y: anchor.y)
+        let cocoa = Displays.cocoaPoint(fromGlobal: global)
+        for entry in windows where NSMouseInRect(cocoa, entry.screen.frame, false) {
+            let frame = entry.screen.frame
+            entry.view.flash(report.gesture, at: CGPoint(x: cocoa.x - frame.minX, y: cocoa.y - frame.minY))
+        }
+    }
+
+    /// The "why not?" text: the numbers the classifier used and the rule that decided.
+    static func readout(_ report: SegmentReport) -> String {
+        var lines = ["\(report.gesture.rawValue) — \(report.rule)"]
+        if let s = report.stats {
+            lines.append(String(format: "T %3.0f ms   |d| %.2f hs   L %.2f hs   vpeak %.2f /s",
+                                s.duration * 1000, s.distance, s.pathLength, s.peakSpeed))
+            lines.append("axis \(report.axis.rawValue)   reversed \(s.reversed ? "yes" : "no")   still before \(s.startedFromStill ? "yes" : "no")"
+                         + (s.timedOut ? "   timed out" : ""))
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    /// Guided recording: a large prompt on the main screen (nil hides it).
+    func showPrompt(_ title: String?, detail: String = "", recording: Bool = false) {
+        lastPrompt = title.map { ($0, detail, recording) }
+        windows.first?.view.showPrompt(title, detail: detail, recording: recording)
+    }
+    private var lastPrompt: (title: String, detail: String, recording: Bool)?
 
     /// Short status message near the top of the screen the user is looking at.
     func toast(_ text: String, symbol: String, tint: NSColor = Theme.accent) {
@@ -116,7 +174,10 @@ final class OverlayView: NSView {
     private let halo = HaloLayer()
     private let glyph = CAShapeLayer()
     private let edgeGlow = CAGradientLayer()
+    private let trailLayer = CAShapeLayer()
     private let toastView = ToastView()
+    private let readoutView = ReadoutView()
+    private let promptView = PromptView()
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -124,6 +185,12 @@ final class OverlayView: NSView {
         layer?.backgroundColor = NSColor.clear.cgColor
         halo.isHidden = true
         layer?.addSublayer(edgeGlow)
+        trailLayer.fillColor = nil
+        trailLayer.strokeColor = Theme.accent.withAlphaComponent(0.55).cgColor
+        trailLayer.lineWidth = 3
+        trailLayer.lineCap = .round
+        trailLayer.lineJoin = .round
+        layer?.addSublayer(trailLayer)
         layer?.addSublayer(halo)
 
         let glyphSize: CGFloat = 8
@@ -137,15 +204,27 @@ final class OverlayView: NSView {
         edgeGlow.opacity = 0
         addSubview(toastView)
         toastView.alphaValue = 0
+        addSubview(readoutView)
+        readoutView.isHidden = true
+        addSubview(promptView)
+        promptView.isHidden = true
     }
 
     required init?(coder: NSCoder) {
         nil
     }
 
-    func render(halo model: HaloModel?, glyph glyphColor: NSColor?, edgeProgress: Double) {
+    func render(halo model: HaloModel?, glyph glyphColor: NSColor?, edgeProgress: Double, trail: [CGPoint] = []) {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
+        if trail.count > 1 {
+            // What the system sees during a flick: the path from where it started.
+            let path = CGMutablePath()
+            path.addLines(between: trail)
+            trailLayer.path = path
+        } else {
+            trailLayer.path = nil
+        }
         if let model {
             halo.isHidden = false
             halo.position = model.point
@@ -196,6 +275,114 @@ final class OverlayView: NSView {
             edgeGlow.frame = CGRect(x: 0, y: bounds.maxY - thickness, width: bounds.width, height: thickness)
             edgeGlow.startPoint = CGPoint(x: 0.5, y: 1); edgeGlow.endPoint = CGPoint(x: 0.5, y: 0)
         }
+    }
+
+    // MARK: Velocity feedback
+
+    /// Result flash at a flick's anchor: ripple = click, double ripple = double click, ring =
+    /// right click, arrow = scroll direction. Fades within 300 ms.
+    func flash(_ gesture: VelocityGesture, at point: CGPoint) {
+        switch gesture {
+        case .click, .dragStart:
+            addFlash(Self.circle(radius: 20), at: point, color: Theme.accent, fill: true, from: 0.4, to: 1.5, delay: 0)
+        case .doubleClick:
+            addFlash(Self.circle(radius: 20), at: point, color: Theme.accent, fill: true, from: 0.4, to: 1.5, delay: 0)
+            addFlash(Self.circle(radius: 20), at: point, color: Theme.accent, fill: false, from: 0.4, to: 2.0, delay: 0.09)
+        case .rightClick:
+            addFlash(Self.circle(radius: 18), at: point, color: Theme.armed, fill: false, from: 0.7, to: 1.1, delay: 0,
+                     lineWidth: 3.5)
+        case .dragEnd:
+            addFlash(Self.circle(radius: 20), at: point, color: Theme.dragging, fill: false, from: 1.5, to: 0.6, delay: 0)
+        case .scrollUp, .scrollDown, .scrollLeft, .scrollRight:
+            // Layer space is y-up; the arrow is drawn pointing up and rotated.
+            let angle: CGFloat
+            switch gesture {
+            case .scrollUp: angle = 0
+            case .scrollDown: angle = .pi
+            case .scrollLeft: angle = .pi / 2
+            default: angle = -.pi / 2
+            }
+            addFlash(Self.arrow(rotation: angle), at: point, color: Theme.scrolling, fill: false, from: 0.8, to: 1.2,
+                     delay: 0, lineWidth: 3.5)
+        case .zoom, .reposition, .ignored:
+            break
+        }
+    }
+
+    private static func circle(radius r: CGFloat) -> CGPath {
+        CGPath(ellipseIn: CGRect(x: -r, y: -r, width: r * 2, height: r * 2), transform: nil)
+    }
+
+    private static func arrow(rotation: CGFloat) -> CGPath {
+        let path = CGMutablePath()
+        path.move(to: CGPoint(x: 0, y: -16))
+        path.addLine(to: CGPoint(x: 0, y: 16))
+        path.move(to: CGPoint(x: -9, y: 7))
+        path.addLine(to: CGPoint(x: 0, y: 16))
+        path.addLine(to: CGPoint(x: 9, y: 7))
+        var transform = CGAffineTransform(rotationAngle: rotation)
+        return path.copy(using: &transform) ?? path
+    }
+
+    private func addFlash(_ path: CGPath, at point: CGPoint, color: NSColor, fill: Bool, from: CGFloat, to: CGFloat,
+                          delay: CFTimeInterval, lineWidth: CGFloat = 2.5) {
+        guard let host = layer else { return }
+        let shape = CAShapeLayer()
+        shape.path = path
+        shape.position = point
+        shape.fillColor = fill ? color.withAlphaComponent(0.22).cgColor : nil
+        shape.strokeColor = color.cgColor
+        shape.lineWidth = lineWidth
+        shape.lineCap = .round
+        shape.lineJoin = .round
+        shape.shadowColor = color.cgColor
+        shape.shadowOpacity = 0.8
+        shape.shadowRadius = 5
+        shape.shadowOffset = .zero
+        shape.opacity = 0
+        host.addSublayer(shape)
+
+        let scale = CABasicAnimation(keyPath: "transform.scale")
+        scale.fromValue = from
+        scale.toValue = to
+        let fade = CAKeyframeAnimation(keyPath: "opacity")
+        fade.values = [0.95, 0.8, 0]
+        fade.keyTimes = [0, 0.4, 1]
+        let group = CAAnimationGroup()
+        group.animations = [scale, fade]
+        group.duration = 0.3
+        group.beginTime = CACurrentMediaTime() + delay
+        group.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        group.fillMode = .both
+        group.isRemovedOnCompletion = false
+        shape.add(group, forKey: "flash")
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay + 0.35) { [weak shape] in
+            shape?.removeFromSuperlayer()
+        }
+    }
+
+    /// "Why not?" readout in the bottom-left corner (nil hides it).
+    func showReadout(_ text: String?) {
+        guard let text else {
+            readoutView.isHidden = true
+            return
+        }
+        readoutView.configure(text: text)
+        let size = readoutView.fittingSize
+        readoutView.frame = NSRect(x: 16, y: 16, width: size.width, height: size.height)
+        readoutView.isHidden = false
+    }
+
+    func showPrompt(_ title: String?, detail: String, recording: Bool) {
+        guard let title else {
+            promptView.isHidden = true
+            return
+        }
+        promptView.configure(title: title, detail: detail, recording: recording)
+        let size = promptView.fittingSize
+        promptView.frame = NSRect(x: (bounds.width - size.width) / 2, y: bounds.height * 0.62,
+                                  width: size.width, height: size.height)
+        promptView.isHidden = false
     }
 
     func showToast(_ text: String, symbol: String, tint: NSColor) {
@@ -292,6 +479,99 @@ final class HaloLayer: CALayer {
 
     /// Layer transforms apply about the anchor point (the centre), so a plain scale suffices.
     private static let pressed = CGAffineTransform(scaleX: 0.82, y: 0.82)
+}
+
+// MARK: - Readout and prompt
+
+/// The "why not?" numbers: small, monospaced, on a HUD panel.
+final class ReadoutView: NSVisualEffectView {
+    private let label = NSTextField(wrappingLabelWithString: "")
+
+    init() {
+        super.init(frame: .zero)
+        material = .hudWindow
+        blendingMode = .behindWindow
+        state = .active
+        wantsLayer = true
+        layer?.cornerRadius = 10
+        layer?.masksToBounds = true
+        label.font = Theme.mono(11)
+        label.preferredMaxLayoutWidth = 460
+        label.textColor = .labelColor
+        label.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(label)
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
+            label.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
+            label.topAnchor.constraint(equalTo: topAnchor, constant: 8),
+            label.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -8),
+            label.widthAnchor.constraint(lessThanOrEqualToConstant: 460),
+        ])
+    }
+
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    func configure(text: String) {
+        label.stringValue = text
+    }
+}
+
+/// Guided recording prompt: what to do, which repetition, and whether it's recording now.
+final class PromptView: NSVisualEffectView {
+    private let title = NSTextField(labelWithString: "")
+    private let detail = NSTextField(labelWithString: "")
+    private let dot = NSView()
+
+    init() {
+        super.init(frame: .zero)
+        material = .hudWindow
+        blendingMode = .behindWindow
+        state = .active
+        wantsLayer = true
+        layer?.cornerRadius = 18
+        layer?.masksToBounds = true
+
+        title.font = Theme.rounded(26, weight: .semibold)
+        title.textColor = .labelColor
+        title.alignment = .center
+        detail.font = Theme.rounded(14, weight: .medium)
+        detail.textColor = .secondaryLabelColor
+        detail.alignment = .center
+        dot.wantsLayer = true
+        dot.layer?.cornerRadius = 6
+        dot.layer?.backgroundColor = Theme.warning.cgColor
+        dot.translatesAutoresizingMaskIntoConstraints = false
+
+        let detailRow = NSStackView(views: [dot, detail])
+        detailRow.orientation = .horizontal
+        detailRow.spacing = 8
+        let stack = NSStackView(views: [title, detailRow])
+        stack.orientation = .vertical
+        stack.spacing = 6
+        stack.edgeInsets = NSEdgeInsets(top: 18, left: 28, bottom: 18, right: 28)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(stack)
+        NSLayoutConstraint.activate([
+            dot.widthAnchor.constraint(equalToConstant: 12),
+            dot.heightAnchor.constraint(equalToConstant: 12),
+            stack.leadingAnchor.constraint(equalTo: leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: trailingAnchor),
+            stack.topAnchor.constraint(equalTo: topAnchor),
+            stack.bottomAnchor.constraint(equalTo: bottomAnchor),
+        ])
+    }
+
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    func configure(title text: String, detail detailText: String, recording: Bool) {
+        title.stringValue = text
+        detail.stringValue = detailText
+        dot.isHidden = !recording
+    }
 }
 
 // MARK: - Toast

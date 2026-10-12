@@ -6,11 +6,12 @@
 #   make install  install into ~/Applications (same place install.sh uses) and open it
 #   make test     run the GestureCore test suite
 #   make check    static checks (unfinished markers, imports, Info.plist)
+#   make tune SESSION=recordings/session.json   tune Velocity mode against a guided recording
 
 APP := build/GesturePointer.app
 BIN := $(APP)/Contents/MacOS/GesturePointer
 
-.PHONY: build app run doctor install test check clean replay-demo
+.PHONY: build app run doctor install test check clean replay-demo tune
 
 build:
 	swift build -c release --product GesturePointer
@@ -38,9 +39,13 @@ test:
 check:
 	tools/check.sh
 
-# Replays a synthetic session (no camera needed) and prints what Wisp would do.
+SESSION ?= recordings/session.json
+tune:
+	swift run -c release tune $(SESSION)
+
+# Replays a synthetic Velocity-mode session (no camera needed) and prints what Wisp would do.
 replay-demo: app
-	swift run gesture-replay --synthetic demo /tmp/wisp-demo.json
+	swift run gesture-replay --synthetic velocity /tmp/wisp-demo.json
 	$(BIN) --replay /tmp/wisp-demo.json --dry-run
 
 clean:

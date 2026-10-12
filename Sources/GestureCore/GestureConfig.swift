@@ -6,6 +6,11 @@ import Foundation
 /// Distances named `...Normalized` are divided by hand size (wrist → middle MCP).
 /// Distances named `...Box` are in active-box units (1.0 = the full width of the screen).
 public struct GestureConfig: Equatable, Codable {
+    /// Velocity (flick = tap, swipe = scroll) is the default; Pose (pinch/fist) stays available.
+    public var inputModel: InputModel = .velocity
+    /// Velocity-mode thresholds (SPEC-M7).
+    public var velocity = VelocityParams()
+
     // Pointer filtering
     public var filter = OneEuroParameters(minCutoff: 0.6, beta: 6.0, derivativeCutoff: 1.0)
     /// Dead zone while moving: the cursor trails the filtered point by at most this much, which
@@ -98,9 +103,22 @@ extension GestureConfig {
               let incoming = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw DecodingError.dataCorrupted(.init(codingPath: [], debugDescription: "Settings JSON must be an object"))
         }
-        for (key, value) in incoming where merged[key] != nil {
-            merged[key] = value
-        }
+        merged = mergeLenient(defaults: merged, incoming: incoming)
         return try JSONDecoder().decode(GestureConfig.self, from: JSONSerialization.data(withJSONObject: merged))
+    }
+
+    /// Overlay `incoming` on `defaults`, recursing into nested objects (`velocity`, `filter`),
+    /// so a file missing one nested key still keeps that key's default.
+    private static func mergeLenient(defaults: [String: Any], incoming: [String: Any]) -> [String: Any] {
+        var merged = defaults
+        for (key, value) in incoming {
+            guard let existing = merged[key] else { continue }
+            if let nestedDefaults = existing as? [String: Any], let nestedIncoming = value as? [String: Any] {
+                merged[key] = mergeLenient(defaults: nestedDefaults, incoming: nestedIncoming)
+            } else {
+                merged[key] = value
+            }
+        }
+        return merged
     }
 }

@@ -21,6 +21,8 @@ protocol MenuBarActions: AnyObject {
     var showsPreview: Bool { get }
     var launchesAtLogin: Bool { get }
     var hotkeyDisplay: String { get }
+    /// One line on how to use the current input model ("point, tap to click").
+    var engagedHint: String { get }
     var versionLine: String { get }
     var updateState: Updater.State { get }
     func toggleEnabled()
@@ -91,7 +93,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         switch actions.menuStatus {
         case .off: statusLine = "Off"
         case .standby: statusLine = "Standby — raise an open palm or press \(actions.hotkeyDisplay)"
-        case .engaged: statusLine = "Engaged — point, pinch to click"
+        case .engaged: statusLine = "Engaged — \(actions.engagedHint)"
         case .needsPermission: statusLine = "Needs permission — open Setup…"
         }
         let header = NSMenuItem(title: statusLine, action: nil, keyEquivalent: "")

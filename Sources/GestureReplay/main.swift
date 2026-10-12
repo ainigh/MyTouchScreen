@@ -7,16 +7,18 @@ import GestureCore
 
 let usage = """
 Usage:
-  gesture-replay <recording.json> [--config settings.json] [--display WxH] [--moves] [--disengaged]
+  gesture-replay <recording.json> [--config settings.json] [--pose] [--display WxH] [--moves] [--disengaged]
       Replay a recording through the pointer state machine (engaged from the first frame unless
       --disengaged) and print every intent and event with its time. --moves includes cursor moves.
+      Velocity mode unless the config says otherwise or --pose is given.
   gesture-replay --synthetic <scenario> <out.json>
       Write a synthetic recording. Scenarios: \(Scenario.allCases.map(\.rawValue).joined(separator: ", "))
+      (`velocity` is one of each Velocity-mode gesture, labeled; the others are Pose-mode gestures.)
 
 """
 
 enum Scenario: String, CaseIterable {
-    case steady, jitter, ramp, taps, doubletap, drag, rightclick, scroll, palm, lost, zoom, demo
+    case steady, jitter, ramp, taps, doubletap, drag, rightclick, scroll, palm, lost, zoom, demo, velocity
 
     var frames: [TrackingFrame] {
         switch self {
@@ -31,6 +33,7 @@ enum Scenario: String, CaseIterable {
         case .palm: return SyntheticStream.palmHold(hold: 1.0)
         case .lost: return SyntheticStream.handLost()
         case .zoom: return SyntheticStream.twoHandZoom()
+        case .velocity: return VelocitySynthetic.session(repetitions: 1).frames
         case .demo:
             // A little of everything, back to back.
             var all: [TrackingFrame] = []
@@ -65,7 +68,8 @@ if arguments.first == "--synthetic" {
     guard arguments.count == 3, let scenario = Scenario(rawValue: arguments[1]) else {
         fail("--synthetic needs a scenario name and an output path")
     }
-    let recording = Recording(frames: scenario.frames, info: ["source": "synthetic:\(scenario.rawValue)"])
+    var recording = Recording(frames: scenario.frames, info: ["source": "synthetic:\(scenario.rawValue)"])
+    if scenario == .velocity { recording = VelocitySynthetic.session(repetitions: 1) }
     do {
         try recording.write(to: URL(fileURLWithPath: arguments[2]))
         print("Wrote \(recording.frames.count) frames (\(String(format: "%.1f", recording.duration)) s) to \(arguments[2])")
@@ -102,6 +106,8 @@ while let argument = iterator.next() {
         let parts = value.split(separator: "x").compactMap { Double($0) }
         guard parts.count == 2, parts.allSatisfy({ $0 >= 1 }) else { fail("--display needs WxH, e.g. 1728x1117") }
         display = DisplayInfo(id: "main", frame: Rect(x: 0, y: 0, width: parts[0], height: parts[1]))
+    case "--pose":
+        config.inputModel = .pose
     case "--moves":
         showMoves = true
     case "--disengaged":
@@ -130,6 +136,16 @@ func report(_ out: StepOutput, at time: Double) {
         print(String(format: "%8.3f  intent  ", time) + String(describing: intent))
     }
     for event in out.events {
+        if case let .segmentClassified(segment) = event {
+            // The "why not?" numbers, on one line.
+            let numbers = segment.stats.map {
+                String(format: "T=%.3f |d|=%.2f L=%.2f vpeak=%.2f axis=%@ reversed=%@ still=%@", $0.duration,
+                       $0.distance, $0.pathLength, $0.peakSpeed, segment.axis.rawValue,
+                       $0.reversed ? "yes" : "no", $0.startedFromStill ? "yes" : "no")
+            } ?? "-"
+            print(String(format: "%8.3f  segment ", time) + "\(segment.gesture.rawValue): \(segment.rule)  [\(numbers)]")
+            continue
+        }
         print(String(format: "%8.3f  event   ", time) + String(describing: event))
     }
 }
