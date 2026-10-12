@@ -242,7 +242,7 @@ final class AppController: MenuBarActions {
         // A guided recording needs every frame, even if the palm disengaged meanwhile.
         if calibration != nil || engaged || guided != nil { return .full }
         guard settings.enabled else { return .off }
-        // Standby watches for the engage palm (and feeds the preview) at a few fps.
+        // Standby watches for the engage palms (and feeds the preview) at a few fps.
         if settings.config.palmEngageEnabled || settings.showPreview { return .standby }
         return .off
     }
@@ -499,7 +499,7 @@ final class AppController: MenuBarActions {
             },
             onFinish: { [weak self] in
                 self?.finishOnboarding()
-                self?.overlay?.toast("Raise an open palm to engage", symbol: "hand.raised")
+                self?.overlay?.toast("Raise both open palms to engage", symbol: "hand.raised")
             })
         let window = NSWindow(contentViewController: NSHostingController(rootView: view))
         window.title = "Wisp Setup"
@@ -538,7 +538,7 @@ final class AppController: MenuBarActions {
     var hotkeyDisplay: String { settings.hotkey.displayString }
     var engagedHint: String {
         switch settings.config.inputModel {
-        case .dwellShake: return "point, hold 2 s to click, wiggle to scroll, left hand up to drag"
+        case .dwellShake: return "point, rest 1 s to lock, wiggle to click, left hand up to drag"
         case .velocity: return "point, tap the air to click, flick to scroll"
         case .pose: return "point, pinch to click"
         }

@@ -159,6 +159,13 @@ public final class PointerStateMachine {
     private var palmLatched = false
     var palmSpeed: Double = 0
     private var palmSpeedLast: (time: Double, point: Point2)?
+    private var secondaryPalmSpeed: Double = 0
+    private var secondaryPalmSpeedLast: (time: Double, point: Point2)?
+    private var notBothPalmsSince: Double?
+    private static let palmPairGrace = 0.3
+    /// Both hands are open palms this frame: the engage / disengage gesture, so nothing else
+    /// may act on them.
+    var bothPalmsOpen = false
 
     // Dwell click
     var dwellAnchor: (time: Double, point: Point2)?
@@ -183,6 +190,8 @@ public final class PointerStateMachine {
     var dragSettleSince: Double?
     var tipSpeed: Double = 0
     var lastTip: (time: Double, point: Point2)?
+    /// Set while the cursor is locked in place (held still; see PointerStateMachine+Shake.swift).
+    var cursorLock: CursorLock?
 
     /// Where the real mouse pointer is, kept up to date by the app while disengaged, so a palm
     /// engage can start on that display.
@@ -327,6 +336,9 @@ public final class PointerStateMachine {
         if isEngaged && !wasSuppressed {
             out.events.append(.externalMouseTookOver)
         }
+        // A locked hand cursor is stale once the real mouse has moved; start over from the hand.
+        cursorLock = nil
+        dwellAnchor = nil
         if state == .dragging && config.inputModel != .pose {
             // Same rule as below, but Velocity mode has no pinch to wait out: back to hover.
             if buttonDown {
@@ -391,9 +403,14 @@ public final class PointerStateMachine {
             if config.inputModel == .pose {
                 out.append(handleDetectorEvents(events, isPrimary: true, hand: hand, at: time))
             }
-            out.append(updatePalmEngagement(hand, at: time))
         }
         if let hand = secondaryHand {
+            if config.inputModel == .dwellShake && !secondarySeen {
+                // Hold & wiggle assigns hands itself; the second detector still classifies the
+                // left hand's pose, which the two-palm toggle needs.
+                secondary.reset()
+                secondarySeen = true
+            }
             let events = secondary.update(hand)
             if config.inputModel == .pose {
                 out.append(handleDetectorEvents(events, isPrimary: false, hand: hand, at: time))
@@ -405,6 +422,7 @@ public final class PointerStateMachine {
             secondary.reset()
             if state == .zooming && isEngaged && config.inputModel == .pose { out.append(endZoom()) }
         }
+        out.append(updatePalmEngagement(primaryHand, secondaryHand, at: time))
 
         guard isEngaged else {
             refreshSnapshot(at: time)
@@ -479,28 +497,50 @@ public final class PointerStateMachine {
 
     // MARK: Engagement by palm
 
-    private func updatePalmEngagement(_ hand: HandFrame, at time: Double) -> StepOutput {
-        // Palm speed in hand sizes per second, lightly smoothed.
-        let palm = hand.palmCenter
-        if let last = palmSpeedLast, time > last.time {
-            let moved = Point2(palm.x - last.point.x, (palm.y - last.point.y) / hand.imageAspect).length
-        let instant = moved / hand.handSize / (time - last.time)
-            palmSpeed += (instant - palmSpeed) * 0.4
+    /// Palm speed in hand sizes per second, lightly smoothed.
+    private static func updateSpeed(_ speed: inout Double, last: inout (time: Double, point: Point2)?,
+                                    hand: HandFrame?, at time: Double) {
+        guard let hand else {
+            speed = 0
+            last = nil
+            return
         }
-        palmSpeedLast = (time, palm)
+        let palm = hand.palmCenter
+        if let previous = last, time > previous.time {
+            let moved = Point2(palm.x - previous.point.x, (palm.y - previous.point.y) / hand.imageAspect).length
+            let instant = moved / hand.handSize / (time - previous.time)
+            speed += (instant - speed) * 0.4
+        }
+        last = (time, palm)
+    }
+
+    /// Both hands held up as still open palms toggle engagement. One palm alone does nothing:
+    /// a single open hand is too easy to show by accident (reaching, waving, gesturing).
+    private func updatePalmEngagement(_ hand: HandFrame?, _ other: HandFrame?, at time: Double) -> StepOutput {
+        Self.updateSpeed(&palmSpeed, last: &palmSpeedLast, hand: hand, at: time)
+        Self.updateSpeed(&secondaryPalmSpeed, last: &secondaryPalmSpeedLast, hand: other, at: time)
+        bothPalmsOpen = hand != nil && other != nil
+            && primary.state.pose == .openPalm && secondary.state.pose == .openPalm
 
         guard config.palmEngageEnabled else {
             palmHoldStart = nil
             return StepOutput()
         }
-        let isPalm = primary.state.pose == .openPalm
-        if !isPalm {
-            palmLatched = false
-            palmHoldStart = nil
+        if !bothPalmsOpen {
+            // Not both palms for a moment (Vision drops a hand for a frame, a re-seen hand takes
+            // a few frames to classify) neither restarts the hold nor re-arms the toggle; for
+            // longer, it does both.
+            if notBothPalmsSince == nil { notBothPalmsSince = time }
+            if time - (notBothPalmsSince ?? time) > Self.palmPairGrace {
+                palmLatched = false
+                palmHoldStart = nil
+            }
             return StepOutput()
         }
-        let busy = [.pinched, .dragging, .scrolling, .zooming, .switchingApps, .flicking, .dragReady].contains(state)
-        guard !palmLatched, !busy, palmSpeed < config.palmStillnessNormalized else {
+        notBothPalmsSince = nil
+        let busy = [.pinched, .dragging, .scrolling, .zooming, .switchingApps, .flicking].contains(state)
+        let still = max(palmSpeed, secondaryPalmSpeed) < config.palmStillnessNormalized
+        guard !palmLatched, !busy, still else {
             palmHoldStart = nil
             return StepOutput()
         }
@@ -965,19 +1005,33 @@ public final class PointerStateMachine {
         return StepOutput()
     }
 
-    /// Hold & wiggle clicks by dwelling, always; the other models only when dwell click is on.
+    /// Pose and Velocity click by dwelling only when dwell click is on. (Hold & wiggle never
+    /// dwell-clicks: holding still locks the cursor, and a wiggle clicks.)
     var dwellSettings: (enabled: Bool, delay: Double, radiusBox: Double) {
-        if config.inputModel == .dwellShake {
-            return (true, config.shake.dwellTime, config.shake.dwellRadiusBox)
-        }
+        guard config.inputModel != .dwellShake else { return (false, 0, 0) }
         return (config.dwellClickEnabled, config.dwellClickDelay, config.dwellRadiusBox)
     }
 
     private func dwellProgress(at time: Double) -> Double {
+        if config.inputModel == .dwellShake { return lockProgress(at: time) }
         let dwell = dwellSettings
         guard dwell.enabled, state == .hover, !dwellLatched, let anchor = dwellAnchor else { return 0 }
         // Show nothing for the first quarter so ordinary pauses do not flash the ring.
         let t = (time - anchor.time) / max(dwell.delay, 1e-6)
+        return t < 0.25 ? 0 : clamp01((t - 0.25) / 0.75)
+    }
+
+    /// Hold & wiggle's ring: fills while the cursor settles toward a lock, stays full while
+    /// locked, and drains through the wake window (wiggle before it empties to click).
+    private func lockProgress(at time: Double) -> Double {
+        guard isEngaged, state == .hover else { return 0 }
+        if let lock = cursorLock {
+            guard let wake = lock.wakeStart else { return 1 }
+            return clamp01(1 - (time - wake) / max(config.shake.wakeTime, 1e-6))
+        }
+        guard let anchor = dwellAnchor else { return 0 }
+        // Show nothing for the first quarter so ordinary pauses do not flash the ring.
+        let t = (time - anchor.time) / max(config.shake.lockTime, 1e-6)
         return t < 0.25 ? 0 : clamp01((t - 0.25) / 0.75)
     }
 

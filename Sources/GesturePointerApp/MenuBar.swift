@@ -92,7 +92,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         let statusLine: String
         switch actions.menuStatus {
         case .off: statusLine = "Off"
-        case .standby: statusLine = "Standby — raise an open palm or press \(actions.hotkeyDisplay)"
+        case .standby: statusLine = "Standby — raise both open palms or press \(actions.hotkeyDisplay)"
         case .engaged: statusLine = "Engaged — \(actions.engagedHint)"
         case .needsPermission: statusLine = "Needs permission — open Setup…"
         }

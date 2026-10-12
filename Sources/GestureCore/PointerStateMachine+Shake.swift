@@ -3,11 +3,16 @@ import Foundation
 /// Hold & wiggle (the default input model). The right hand points; the left hand is a modifier.
 ///
 /// Right hand alone:
-/// - every movement moves the cursor;
-/// - holding the cursor still for `shake.dwellTime` clicks, once, where it rests;
-/// - wiggling (`shake.reversals` direction changes along one axis within `shake.window`) puts the
-///   cursor back where the wiggle started and enters scroll mode: the fingertip's movement along that
-///   axis scrolls, until the hand holds still.
+/// - movement moves the cursor;
+/// - holding the cursor still for `shake.lockTime` locks it in place. When the hand moves again
+///   the cursor stays locked for `shake.wakeTime` more: a wiggle (`shake.clickReversals`
+///   direction changes) within that time clicks where the cursor is locked, and the cursor stays
+///   locked, waiting for the next movement, so wiggling again clicks again (a double click when
+///   quick). No wiggle in that time: the cursor unlocks and follows the hand from where it was.
+///   This is the only way this model clicks;
+/// - wiggling while the cursor moves (`shake.reversals` direction changes along one axis within
+///   `shake.window`) puts the cursor back where the wiggle started and enters scroll mode: the
+///   fingertip's movement along that axis scrolls, until the hand holds still.
 ///
 /// Left hand visible (any pose, anywhere):
 /// - the right hand's movement drags: the button goes down where the cursor was when the left
@@ -15,8 +20,8 @@ import Foundation
 /// - a wiggle zooms instead of scrolling: after it, moving up / right zooms in, down / left out,
 ///   until the hand holds still.
 ///
-/// The open (right) palm engages and disengages as always. `preferredHand = .left` swaps the
-/// roles for left-handed use.
+/// Both hands up as open palms engage and disengage; while they are up nothing else happens.
+/// `preferredHand = .left` swaps the roles for left-handed use.
 extension PointerStateMachine {
     // MARK: Hands
 
@@ -81,6 +86,20 @@ extension PointerStateMachine {
         updateModifier(modifier, at: time)
         let modified = modifierPresent
 
+        if bothPalmsOpen && [.hover, .dragReady].contains(state) {
+            // Two open palms are the engage / disengage gesture, not a drag: hold the cursor
+            // where it is (a lock, so lowering the hands doesn't fling it anywhere).
+            state = .hover
+            dragPress = nil
+            dragSettleSince = nil
+            shakeDetector.reset()
+            if let point = lastEmittedCursor ?? cursor, cursorLock == nil {
+                lockCursor(at: point, hand: hand, at: time)
+            }
+            cursorLock?.restFrom(hand.handSpace(hand[.indexTip]))
+            return out
+        }
+
         switch state {
         case .scrolling:
             if modified {
@@ -110,6 +129,8 @@ extension PointerStateMachine {
             state = .hover
             dragPress = nil
         case .hover where modified:
+            // The left hand came up: a drag presses where the cursor is, locked or not.
+            if let lock = cursorLock { unlockCursor(lock, at: time, continueFromLock: true) }
             state = .dragReady
             dragPress = (cursor ?? .zero, hand.handSpace(hand[.indexTip]), time)
             dragSettleSince = nil
@@ -127,6 +148,10 @@ extension PointerStateMachine {
             if warpOffset.length < 1e-5 { warpOffset = .zero }
         }
         lastRawBox = rawBox
+        if state == .hover, let lock = cursorLock {
+            out.append(updateLockedCursor(lock, hand: hand, at: time, suppressed: suppressed))
+            if cursorLock != nil { return out }
+        }
         var box = rawBox + warpOffset
         lastBox = box
         if let jumped = router.update(box: box, at: time) {
@@ -162,16 +187,95 @@ extension PointerStateMachine {
         // While a drag is armed but not yet pressed, the cursor still moves (the press lands
         // where the left hand appeared and catches up).
         out.append(emitMove(screen, suppressed: suppressed))
-        if state == .hover {
-            if dwellAnchor == nil {
-                // Just engaged (or the real mouse just let go): the cursor has to go somewhere and
-                // settle before holding still clicks, so engaging never clicks by itself.
-                dwellAnchor = (time, screen)
-                dwellLatched = true
-            }
-            out.append(updateDwell(screen, at: time, suppressed: suppressed))
+        if state == .hover && !suppressed {
+            updateLockArming(screen, hand: hand, at: time)
         }
         return out
+    }
+
+    // MARK: Lock and click
+
+    /// Holding the cursor within `dwellRadiusBox` for `lockTime` locks it.
+    private func updateLockArming(_ screen: Point2, hand: HandFrame, at time: Double) {
+        let radius = (router.current?.frame.width ?? 1500) * config.shake.dwellRadiusBox
+        guard let anchor = dwellAnchor, anchor.point.distance(to: screen) <= radius else {
+            dwellAnchor = (time, screen)
+            return
+        }
+        if time - anchor.time >= config.shake.lockTime {
+            // Lock where the pointer visibly is, so the click lands exactly there.
+            lockCursor(at: lastEmittedCursor ?? screen, hand: hand, at: time)
+        }
+    }
+
+    func lockCursor(at point: Point2, hand: HandFrame, at time: Double) {
+        cursorLock = CursorLock(point: point, rest: hand.handSpace(hand[.indexTip]), since: time)
+        cursor = point
+        dwellAnchor = nil
+        shakeDetector.reset()
+    }
+
+    /// The cursor stays put. Moving the hand opens the wake window: a wiggle in it clicks (and the
+    /// lock waits for the next movement); a real move without a wiggle unlocks when it ends.
+    private func updateLockedCursor(_ lock: CursorLock, hand: HandFrame, at time: Double,
+                                    suppressed: Bool) -> StepOutput {
+        var lock = lock
+        var out = StepOutput()
+        cursor = lock.point
+        history.append(PointerSample(time: time, cursor: lock.point, box: lastBox ?? .zero, pinchDistance: 1, tipOffset: .zero))
+        history.removeAll { time - $0.time > Self.historySpan }
+
+        let tip = hand.handSpace(hand[.indexTip])
+        let size = max(hand.handSize, 1e-4)
+        if lock.settling {
+            // The tail of a click wiggle is not "the next movement": wait for the hand to stop.
+            if tipSpeed < config.shake.exitStillSpeed { lock.restFrom(tip) }
+        } else if lock.wakeStart == nil && tip.distance(to: lock.rest) / size >= config.shake.wakeDistance {
+            lock.wakeStart = time
+        }
+        let wiggle = shakeDetector.update(point: tip, handSize: hand.handSize, at: time,
+                                          reversals: config.shake.clickReversals)
+        let inWindow = lock.settling || lock.wakeStart.map { time - $0 <= config.shake.wakeTime } ?? false
+        if wiggle != nil && inWindow {
+            if !suppressed { out.append(wiggleClick(at: lock.point, time: time)) }
+            // Still locked: once the hand stops, the next movement opens a new window (and a
+            // wiggle that just keeps going clicks again: a double click).
+            lock.settling = true
+            lock.wakeStart = nil
+        } else if let wakeStart = lock.wakeStart, time - wakeStart > config.shake.wakeTime {
+            if tip.distance(to: lock.rest) / size >= config.shake.minStroke {
+                // The hand went somewhere: the cursor follows from where it was locked.
+                unlockCursor(lock, at: time, continueFromLock: false)
+                return out
+            }
+            // Only a fidget, or a wiggle that didn't finish: stay locked.
+            lock.restFrom(tip)
+            shakeDetector.reset()
+        }
+        cursorLock = lock
+        return out
+    }
+
+    private func wiggleClick(at point: Point2, time: Double) -> StepOutput {
+        var count = 1
+        let radius = (router.current?.frame.width ?? 1500) * config.shake.dwellRadiusBox
+        if let last = lastClick, time - last.time <= config.shake.doubleClickWindow,
+           last.point.distance(to: point) <= radius {
+            count = min(last.count + 1, 3)
+        }
+        lastClick = (time, point, count)
+        return StepOutput(intents: [.click(x: point.x, y: point.y, count: count)], events: [.clicked(count: count)])
+    }
+
+    /// Leave the lock. After a wake the cursor goes to where the hand points (it is a pointer);
+    /// a drag starting from a lock carries on from the locked point instead, so it doesn't drag
+    /// across the screen to catch up with the hand.
+    func unlockCursor(_ lock: CursorLock, at time: Double, continueFromLock: Bool) {
+        cursorLock = nil
+        if continueFromLock { reanchor(at: lock.point, time: time) }
+        cursor = lock.point
+        dwellAnchor = nil
+        shakeDetector.reset()
     }
 
     // MARK: Drag
@@ -285,14 +389,31 @@ extension PointerStateMachine {
             dragSettleSince = nil
         } else {
             state = .hover
-            if let cursor {
-                // A finished scroll or zoom is not the start of a dwell click.
-                dwellAnchor = (time, cursor)
-                dwellLatched = true
-            }
+            // Holding still after the scroll locks the cursor like any other rest.
+            if let cursor { dwellAnchor = (time, cursor) }
         }
         return wasZoom
             ? StepOutput(intents: [.zoom(factor: 1, phase: .ended)], events: [.zoomEnded])
             : StepOutput(intents: [.scroll(dx: 0, dy: 0, phase: .ended)], events: [.scrollEnded])
+    }
+}
+
+/// Hold & wiggle's locked cursor.
+struct CursorLock {
+    /// Where the cursor is held (screen points).
+    var point: Point2
+    /// The fingertip (hand space) the hand rests from; moving `wakeDistance` from it wakes.
+    var rest: Point2
+    var since: Double
+    /// When the hand started moving again, if it has: the wake window's start.
+    var wakeStart: Double?
+    /// Just clicked: waiting for the wiggling hand to stop before watching for the next movement.
+    var settling = false
+
+    /// Wait for the next movement from here.
+    mutating func restFrom(_ tip: Point2) {
+        rest = tip
+        wakeStart = nil
+        settling = false
     }
 }
