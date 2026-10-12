@@ -418,8 +418,7 @@ final class AppController: MenuBarActions {
             return
         }
         if !settings.enabled { settings.enabled = true }
-        // The engaged flag is updated from the pipeline's event; ask for the opposite of it.
-        pipeline.setEngaged(!engaged, reason: .hotkey)
+        pipeline.toggleEngaged(reason: .hotkey)
     }
 
     func selectCamera(_ id: String?) {

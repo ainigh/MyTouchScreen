@@ -64,6 +64,19 @@ final class GesturePipeline {
         }
     }
 
+    /// Flip engagement based on the machine's own state (the main thread's copy may lag).
+    func toggleEngaged(reason: DisengageReason) {
+        let mouse = Displays.mouseLocation()
+        queue.async {
+            let engage = !self.machine.isEngaged
+            let out = self.machine.setEngaged(engage, reason: reason, at: CACurrentMediaTime(),
+                                              mouseLocation: Point2(mouse.x, mouse.y))
+            self.perform(out)
+            if !engage { self.synth.releaseAll() }
+            self.updateTicking()
+        }
+    }
+
     func noteExternalMouse(at location: CGPoint) {
         queue.async {
             self.perform(self.machine.noteExternalMouse(at: Point2(location.x, location.y), time: CACurrentMediaTime()))
