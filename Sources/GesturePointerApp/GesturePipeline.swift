@@ -19,8 +19,8 @@ final class GesturePipeline {
     private var tickTimer: DispatchSourceTimer?
     private var frameTap: ((TrackingFrame) -> Void)?
 
-    /// Print one line per frame (`--no-overlay` headless mode).
-    var printsFrames = false
+    /// Print one line per frame (`--no-overlay` headless mode). Pipeline queue only.
+    private var printsFrames = false
     private var printedFrames = 0
     private var lastPrintTime: Double = 0
     private var printFPS: Double = 0
@@ -39,6 +39,15 @@ final class GesturePipeline {
     }
 
     // MARK: Inputs (any thread)
+
+    /// Output options from the command line, applied on the pipeline queue like everything else.
+    func configureOutput(postsEvents: Bool, logsIntents: Bool, printsFrames: Bool) {
+        queue.async {
+            self.synth.postsEvents = postsEvents
+            self.synth.log = logsIntents ? { print("intent: \($0)") } : nil
+            self.printsFrames = printsFrames
+        }
+    }
 
     func submit(_ frame: TrackingFrame) {
         queue.async { self.handle(frame) }

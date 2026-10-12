@@ -60,7 +60,7 @@ final class HandTracker {
 
         let started = CACurrentMediaTime()
         let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, orientation: .up, options: [:])
-        var hands: [HandFrame] = []
+        var hands: [GestureCore.HandFrame] = []
         do {
             try handler.perform([request])
             for observation in request.results ?? [] where observation.confidence >= minimumObservationConfidence {
@@ -91,8 +91,8 @@ final class HandTracker {
     /// Vision → HandFrame: flip y to a top-left origin and fill any joint Vision omitted.
     static func convert(_ observation: VNHumanHandPoseObservation, timestamp: Double, aspect: Double) -> HandFrame? {
         guard let recognized = try? observation.recognizedPoints(.all) else { return nil }
-        var points = [Point2?](repeating: nil, count: Joint.count)
-        var confidences = [Double](repeating: 0, count: Joint.count)
+        var points = [Point2?](repeating: nil, count: GestureCore.Joint.count)
+        var confidences = [Double](repeating: 0, count: GestureCore.Joint.count)
         for (index, name) in jointOrder.enumerated() {
             if let point = recognized[name], point.confidence > 0.1 {
                 points[index] = Point2(Double(point.location.x), 1 - Double(point.location.y))
@@ -100,18 +100,18 @@ final class HandTracker {
             }
         }
         // Without these the hand cannot drive anything reliably.
-        let essential: [Joint] = [.wrist, .thumbTip, .indexMCP, .indexTip, .middleMCP]
+        let essential: [GestureCore.Joint] = [.wrist, .thumbTip, .indexMCP, .indexTip, .middleMCP]
         guard essential.allSatisfy({ points[$0.rawValue] != nil }) else { return nil }
 
         // Fill gaps from the nearest known joint on the same finger chain (toward the wrist),
         // so geometry stays plausible; confidence 0 marks them as estimated.
         // Chains are wrist(0), then four joints per digit starting at 1, 5, 9, 13, 17.
-        for index in 1..<Joint.count where points[index] == nil {
+        for index in 1..<GestureCore.Joint.count where points[index] == nil {
             let chainStart = ((index - 1) / 4) * 4 + 1
-            let previous = index == chainStart ? Joint.wrist.rawValue : index - 1
-            points[index] = points[previous] ?? points[Joint.wrist.rawValue]
+            let previous = index == chainStart ? GestureCore.Joint.wrist.rawValue : index - 1
+            points[index] = points[previous] ?? points[GestureCore.Joint.wrist.rawValue]
         }
-        let chirality: Chirality
+        let chirality: GestureCore.Chirality
         switch observation.chirality {
         case .left: chirality = .left
         case .right: chirality = .right

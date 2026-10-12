@@ -33,7 +33,7 @@ enum Displays {
             guard let id = displayID(of: screen) else { return nil }
             let b = CGDisplayBounds(id)
             return DisplayInfo(id: stableID(for: id),
-                               frame: Rect(x: b.origin.x, y: b.origin.y, width: b.width, height: b.height))
+                               frame: GestureCore.Rect(x: b.origin.x, y: b.origin.y, width: b.width, height: b.height))
         }
     }
 

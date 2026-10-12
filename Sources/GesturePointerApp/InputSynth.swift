@@ -105,6 +105,7 @@ final class InputSynth {
     // MARK: Mouse
 
     private func postMouse(_ type: CGEventType, at point: CGPoint, button: CGMouseButton, clickState: Int64 = 1) {
+        guard point.x.isFinite, point.y.isFinite else { return }
         guard let event = CGEvent(mouseEventSource: source, mouseType: type,
                                   mouseCursorPosition: point, mouseButton: button) else { return }
         event.setIntegerValueField(.mouseEventClickState, value: clickState)
@@ -183,15 +184,15 @@ final class InputSynth {
         case .commandScroll:
             let scrollPhase: ScrollPhase = phase == .began ? .began : (phase == .ended ? .ended : .changed)
             // ~8 points of scroll per 1% of zoom feels proportional in apps that zoom on ⌘-scroll.
-            postScroll(dx: 0, dy: log(factor) * 800, phase: scrollPhase, flags: .maskCommand)
+            postScroll(dx: 0, dy: Foundation.log(factor) * 800, phase: scrollPhase, flags: .maskCommand)
         case .keyboard:
             if phase != .changed {
                 zoomLogAccumulator = 0
                 return
             }
             // One ⌘= / ⌘− per 18% change in hand spread, which matches typical zoom steps.
-            zoomLogAccumulator += log(factor)
-            let step = log(1.18)
+            zoomLogAccumulator += Foundation.log(factor)
+            let step = Foundation.log(1.18)
             while zoomLogAccumulator >= step {
                 zoomLogAccumulator -= step
                 postKeyPress(KeyCode.equal, flags: .maskCommand)

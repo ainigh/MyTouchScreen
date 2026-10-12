@@ -144,6 +144,7 @@ final class AppSettings: ObservableObject {
 
 // MARK: - Settings window
 
+@MainActor
 struct SettingsView: View {
     @ObservedObject var settings: AppSettings
     let cameras: [CameraInfo]
@@ -166,6 +167,7 @@ struct SettingsView: View {
 }
 
 /// A labelled slider with its value shown in SF Mono.
+@MainActor
 private struct ValueSlider: View {
     let title: String
     @Binding var value: Double
@@ -190,6 +192,7 @@ private struct ValueSlider: View {
     }
 }
 
+@MainActor
 private struct PointerSettings: View {
     @ObservedObject var settings: AppSettings
 
@@ -222,6 +225,7 @@ private struct PointerSettings: View {
     }
 }
 
+@MainActor
 private struct GestureSettings: View {
     @ObservedObject var settings: AppSettings
 
@@ -265,6 +269,7 @@ private struct GestureSettings: View {
     }
 }
 
+@MainActor
 private struct CameraSettings: View {
     @ObservedObject var settings: AppSettings
     let cameras: [CameraInfo]
@@ -302,6 +307,7 @@ private struct CameraSettings: View {
     }
 }
 
+@MainActor
 private struct GeneralSettings: View {
     @ObservedObject var settings: AppSettings
     let launchAtLogin: Binding<Bool>

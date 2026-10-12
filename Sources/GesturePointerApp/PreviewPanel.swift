@@ -99,7 +99,7 @@ final class PreviewView: NSView {
     private let label = NSTextField(labelWithString: "")
     private var imageAspect: Double = 16.0 / 9.0
 
-    private static let boneList: [(Joint, Joint)] = [
+    private static let boneList: [(GestureCore.Joint, GestureCore.Joint)] = [
         (.wrist, .thumbCMC), (.thumbCMC, .thumbMP), (.thumbMP, .thumbIP), (.thumbIP, .thumbTip),
         (.wrist, .indexMCP), (.indexMCP, .indexPIP), (.indexPIP, .indexDIP), (.indexDIP, .indexTip),
         (.middleMCP, .middlePIP), (.middlePIP, .middleDIP), (.middleDIP, .middleTip),
@@ -180,7 +180,7 @@ final class PreviewView: NSView {
                 bonePath.move(to: layerPoint(hand[a]))
                 bonePath.addLine(to: layerPoint(hand[b]))
             }
-            for joint in Joint.allCases {
+            for joint in GestureCore.Joint.allCases {
                 let p = layerPoint(hand[joint])
                 let r: CGFloat = joint == .indexTip || joint == .thumbTip ? 2.6 : 1.6
                 jointPath.addEllipse(in: CGRect(x: p.x - r, y: p.y - r, width: r * 2, height: r * 2))

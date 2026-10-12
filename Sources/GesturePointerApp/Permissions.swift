@@ -88,6 +88,7 @@ final class PermissionMonitor: ObservableObject {
 // MARK: - Welcome window
 
 /// First-run walkthrough: Camera → Accessibility → camera choice → calibrate (or skip).
+@MainActor
 struct WelcomeView: View {
     @ObservedObject var monitor: PermissionMonitor
     @ObservedObject var settings: AppSettings

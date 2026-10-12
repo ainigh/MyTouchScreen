@@ -59,10 +59,8 @@ final class AppController: MenuBarActions {
     // MARK: Lifecycle
 
     func start() {
-        pipeline.synth.postsEvents = !options.dryRun
-        pipeline.synth.zoomStyle = settings.zoomStyle
-        if options.dryRun { pipeline.synth.log = { print("intent: \($0)") } }
-        pipeline.printsFrames = options.noOverlay
+        pipeline.configureOutput(postsEvents: !options.dryRun, logsIntents: options.dryRun,
+                                 printsFrames: options.noOverlay)
         pipeline.onUpdate = { [weak self] snapshot, events in
             self?.handleUpdate(snapshot, events)
         }
@@ -150,8 +148,11 @@ final class AppController: MenuBarActions {
             }
         }
 
+        // Only touch the camera once access is granted: opening a device input earlier would
+        // pop the system prompt at launch, before the welcome window explains why.
         let wantedCamera = (id: settings.cameraID, resolution: settings.resolution)
-        if configuredCamera?.id != wantedCamera.id || configuredCamera?.resolution != wantedCamera.resolution {
+        if Permissions.cameraState == .granted,
+           configuredCamera?.id != wantedCamera.id || configuredCamera?.resolution != wantedCamera.resolution {
             configuredCamera = wantedCamera
             camera.configure(deviceID: wantedCamera.id, resolution: wantedCamera.resolution)
         }
@@ -294,6 +295,10 @@ final class AppController: MenuBarActions {
     }
 
     private func refreshPermissionStatus() {
+        if Permissions.cameraState == .granted && configuredCamera == nil {
+            configuredCamera = (id: settings.cameraID, resolution: settings.resolution)
+            camera.configure(deviceID: settings.cameraID, resolution: settings.resolution)
+        }
         let ax = Permissions.accessibilityGranted
         if ax != axGranted {
             axGranted = ax

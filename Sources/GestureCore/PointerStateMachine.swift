@@ -46,6 +46,8 @@ public struct PointerSnapshot: Equatable {
     public var pose: HandPose = .point
     public var outputSuppressed = false
     public var momentumActive = false
+
+    public init() {}
 }
 
 /// Intents for the OS plus events for feedback, produced by one step of the machine.
