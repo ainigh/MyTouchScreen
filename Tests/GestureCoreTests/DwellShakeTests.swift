@@ -23,7 +23,7 @@ final class DwellShakeTests: XCTestCase {
         var rng = SeededRandom(seed: 5)
         return (0..<Int((duration * fps).rounded())).map { i in
             let t = Double(i) / fps
-            var hand = VelocitySynthetic.placedHand(tip: Point2(0.45, 0.45), size: 0.12, offset: offset(t))
+            var hand = MotionSynthetic.placedHand(tip: Point2(0.45, 0.45), size: 0.12, offset: offset(t))
             if fist(t) { hand.makeFist() }
             var hands = [hand.frame(at: t, noise: noise, rng: &rng)]
             if let spec = other(t) {
@@ -44,7 +44,7 @@ final class DwellShakeTests: XCTestCase {
 
     /// Move from the rest spot to `to` over `duration` starting at `start`.
     private func move(_ t: Double, start: Double, to: Point2, duration: Double = 0.5) -> Point2 {
-        to * VelocitySynthetic.minimumJerk((t - start) / duration)
+        to * MotionSynthetic.minimumJerk((t - start) / duration)
     }
 
     /// Back-and-forth along `axis`: `count` strokes of `amplitude`, each `stroke` seconds long.
@@ -54,7 +54,7 @@ final class DwellShakeTests: XCTestCase {
         guard u > 0 else { return .zero }
         guard u < Double(count) else { return count % 2 == 1 ? axis * amplitude : .zero }
         let n = Int(u)
-        let within = VelocitySynthetic.minimumJerk(u - Double(n))
+        let within = MotionSynthetic.minimumJerk(u - Double(n))
         return axis * (amplitude * (n % 2 == 0 ? within : 1 - within))
     }
 
@@ -62,8 +62,7 @@ final class DwellShakeTests: XCTestCase {
         Evaluation.run(frames, config: config ?? self.config)
     }
 
-    func testHoldAndWiggleIsTheDefault() {
-        XCTAssertEqual(GestureConfig().inputModel, .dwellShake)
+    func testDefaults() {
         XCTAssertEqual(GestureConfig().shake.lockTime, 1.0)
         XCTAssertEqual(GestureConfig().shake.wakeTime, 1.0)
         XCTAssertEqual(GestureConfig().shake.reversals, 2)
@@ -93,7 +92,7 @@ final class DwellShakeTests: XCTestCase {
             for frame in frames { out.append(machine.process(frame)) }
             XCTAssertEqual(out.clicks.count + out.downs, 0, "resting never clicks (\(fps) fps)")
             XCTAssertNotNil(machine.cursorLock, "a resting cursor is locked (\(fps) fps)")
-            XCTAssertEqual(machine.snapshot.dwellProgress, 1, "the ring shows the lock")
+            XCTAssertEqual(machine.snapshot.lockProgress, 1, "the ring shows the lock")
         }
     }
 
@@ -177,10 +176,10 @@ final class DwellShakeTests: XCTestCase {
         // (A quick double tap is down-up-down-up: a wiggle, so it is left out.)
         for label in [GestureLabel.repositionFast, .repositionSlow, .fineTarget, .click, .drag] {
             for i in 0..<40 {
-                let sample = VelocitySynthetic.sample(label, fps: i % 2 == 0 ? 60 : 30, seed: UInt64(i + 1))
+                let sample = MotionSynthetic.sample(label, fps: i % 2 == 0 ? 60 : 30, seed: UInt64(i + 1))
                 let out = Evaluation.merged(run(sample.frames))
                 XCTAssertEqual(out.scrolls(.began).count, 0, "\(label.rawValue) \(i) scrolled")
-                XCTAssertEqual(out.clicks.count + out.rightClicks + out.downs, 0, "\(label.rawValue) \(i) clicked")
+                XCTAssertEqual(out.clicks.count + out.downs, 0, "\(label.rawValue) \(i) clicked")
             }
         }
     }
@@ -318,8 +317,8 @@ final class DwellShakeTests: XCTestCase {
     func testCloseThenWidenThenRestZoomsInAgain() {
         // Two ratchet strokes: close up then widen, rest; close up then widen, rest.
         func spread(_ t: Double) -> Double {
-            -0.05 * VelocitySynthetic.minimumJerk((t - 2.0) / 0.4) + 0.05 * VelocitySynthetic.minimumJerk((t - 2.4) / 0.4)
-                - 0.05 * VelocitySynthetic.minimumJerk((t - 3.6) / 0.4) + 0.05 * VelocitySynthetic.minimumJerk((t - 4.0) / 0.4)
+            -0.05 * MotionSynthetic.minimumJerk((t - 2.0) / 0.4) + 0.05 * MotionSynthetic.minimumJerk((t - 2.4) / 0.4)
+                - 0.05 * MotionSynthetic.minimumJerk((t - 3.6) / 0.4) + 0.05 * MotionSynthetic.minimumJerk((t - 4.0) / 0.4)
         }
         let frames = twoFists(duration: 6, right: { Point2(spread($0), 0) }, left: { Point2(-spread($0), 0) })
         let out = Evaluation.merged(run(frames))
@@ -367,7 +366,7 @@ final class DwellShakeTests: XCTestCase {
     func testRaiseThenLowerAndRestScrollsByTheLastStroke() {
         // Up (a return stroke), then down, then rest: scrolls down, like the zoom ratchet.
         func dy(_ t: Double) -> Double {
-            -0.06 * VelocitySynthetic.minimumJerk((t - 2.0) / 0.4) + 0.08 * VelocitySynthetic.minimumJerk((t - 2.4) / 0.5)
+            -0.06 * MotionSynthetic.minimumJerk((t - 2.0) / 0.4) + 0.08 * MotionSynthetic.minimumJerk((t - 2.4) / 0.5)
         }
         let frames = twoFists(right: { Point2(0, dy($0)) }, left: { Point2(0, dy($0)) })
         let out = Evaluation.merged(run(frames))
@@ -382,13 +381,11 @@ final class DwellShakeTests: XCTestCase {
     }
 
     func testOtherHandAloneNeverPoints() {
-        let sample = VelocitySynthetic.sample(.rightClick, fps: 60, seed: 2)
-        XCTAssertEqual(Evaluation.merged(run(sample.frames)).rightClicks, 0)
         let otherOnly = stream(duration: 3, other: { _ in Other(pose: .point) }) { _ in .zero }.map {
             TrackingFrame(timestamp: $0.timestamp, hands: Array($0.hands.dropFirst()))
         }
         let out = Evaluation.merged(run(otherOnly))
-        XCTAssertEqual(out.moves.count + out.clicks.count + out.rightClicks, 0, "the other hand alone never points")
+        XCTAssertEqual(out.moves.count + out.clicks.count, 0, "the other hand alone never points")
     }
 
     private let small = DisplayInfo(id: "S", frame: Rect(x: 0, y: 0, width: 1440, height: 900))
@@ -445,7 +442,7 @@ final class DwellShakeTests: XCTestCase {
         XCTAssertFalse(out.events.contains(.disengaged(.palm)), "one palm never toggles")
         XCTAssertGreaterThan(out.moves.count, 100)
         // Wags while moving and the raised left hand (no longer a modifier) do nothing.
-        XCTAssertEqual(out.clicks.count + out.rightClicks + out.scrolls(.began).count + out.zooms.count, 0)
+        XCTAssertEqual(out.clicks.count + out.scrolls(.began).count + out.zooms.count, 0)
         XCTAssertEqual(out.downs, 1)
         XCTAssertEqual(out.ups, 1)
         XCTAssertTrue(log.contains { (15.5...17).contains($0.0) && $0.1.downs > 0 })
@@ -470,16 +467,16 @@ final class DwellShakeTests: XCTestCase {
     }
 
     func testOnePalmDoesNotToggleEngagement() {
-        for config in [config, .pose, .velocityMode] {
+        do {
             let machine = PointerStateMachine(config: config, displays: [testDisplay])
             var out = StepOutput()
             for frame in SyntheticStream.palmHold(hold: 1.5, bothHands: false) { out.append(machine.process(frame)) }
-            XCTAssertFalse(machine.isEngaged, "\(config.inputModel)")
+            XCTAssertFalse(machine.isEngaged)
             _ = machine.setEngaged(true, at: 3)
             for frame in SyntheticStream.palmHold(hold: 1.5, bothHands: false) {
                 out.append(machine.process(TrackingFrame(timestamp: frame.timestamp + 3, hands: frame.hands)))
             }
-            XCTAssertTrue(machine.isEngaged, "one palm doesn't disengage either (\(config.inputModel))")
+            XCTAssertTrue(machine.isEngaged, "one palm doesn't disengage either")
         }
     }
 
@@ -494,13 +491,17 @@ final class DwellShakeTests: XCTestCase {
         XCTAssertLessThan(engagedAt ?? 99, 0.3 + config.palmEngageDuration + 0.15)
     }
 
-    func testSwitchingModelMidDragReleasesTheButton() {
+    func testSettingsChangeMidDragKeepsTheDrag() {
         let machine = PointerStateMachine(config: config, displays: [testDisplay])
         _ = machine.setEngaged(true, at: 0)
         var out = StepOutput()
         for frame in fistDrag() where frame.timestamp < 3.2 { out.append(machine.process(frame)) }
         XCTAssertEqual(machine.state, .dragging)
-        out.append(machine.updateConfig(.velocityMode))
+        var changed = config
+        changed.scrollSpeed = 2
+        out.append(machine.updateConfig(changed))
+        XCTAssertEqual(machine.state, .dragging)
+        for frame in fistDrag() where frame.timestamp >= 3.2 { out.append(machine.process(frame)) }
         XCTAssertEqual(out.downs, 1)
         XCTAssertEqual(out.ups, 1)
     }

@@ -12,9 +12,7 @@ enum Theme {
     }
 
     static let accent = rgb(0x2EC4B6)      // Wisp Teal: hover / engaged
-    static let armed = rgb(0xFFB547)       // Amber: fingers closing
     static let dragging = rgb(0x8B7CF6)    // Violet
-    static let scrolling = rgb(0x4D9DFF)   // Sky
     static let zooming = rgb(0xFF6B9A)     // Rose
     static let warning = rgb(0xFF6B5B)     // Coral
     static let idle = rgb(0x9AA3AD)        // Slate, for standby glyphs
@@ -23,12 +21,7 @@ enum Theme {
         switch state {
         case .idle: return idle
         case .engaged, .hover: return accent
-        case .pinchArmed, .pinched: return armed
         case .dragging: return dragging
-        case .scrolling: return scrolling
-        case .zooming: return zooming
-        case .switchingApps: return dragging
-        case .flicking: return accent
         case .twoFists: return zooming
         }
     }

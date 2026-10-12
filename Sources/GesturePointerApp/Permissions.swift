@@ -144,7 +144,7 @@ struct WelcomeView: View {
             }
 
             step(number: 4, title: "Calibrate (20 s, optional)",
-                 detail: "Point at each corner of the screen, then pinch three times. Skipping uses sensible defaults.",
+                 detail: "Point at each corner of the screen. Skipping uses sensible defaults.",
                  done: false) {
                 EmptyView()
             }

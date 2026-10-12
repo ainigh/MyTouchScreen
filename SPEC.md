@@ -1,5 +1,10 @@
 # SPEC.md — Gesture Pointer for macOS
 
+> **Gesture set superseded (Oct 2026, owner request):** pinch-to-click, pinch drag, fist scroll,
+> two-hand pinch zoom, the app switcher, dwell click and the pinch calibration step were removed.
+> Wisp now has one gesture model (lock, wiggle click, fist drag, two-fist zoom/scroll, two-palm
+> toggle). See README → Gesture cheat sheet and DECISIONS.md. The rest of this spec still applies.
+
 ## The pitch
 
 A menu-bar app that makes any Mac screen behave like a touch screen you don't have to touch.

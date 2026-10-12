@@ -6,13 +6,8 @@ import Foundation
 /// Distances named `...Normalized` are divided by hand size (wrist → middle MCP).
 /// Distances named `...Box` are in active-box units (1.0 = the full width of the screen).
 public struct GestureConfig: Equatable, Codable {
-    /// Hold & wiggle (dwell = click, wiggle = scroll) is the default; Velocity (flick = tap)
-    /// and Pose (pinch/fist) stay available.
-    public var inputModel: InputModel = .dwellShake
-    /// Hold & wiggle thresholds.
+    /// Lock, wiggle click, fist drag and two-fist thresholds.
     public var shake = ShakeParams()
-    /// Velocity-mode thresholds (SPEC-M7).
-    public var velocity = VelocityParams()
 
     // Pointer filtering
     public var filter = OneEuroParameters(minCutoff: 0.6, beta: 6.0, derivativeCutoff: 1.0)
@@ -34,27 +29,12 @@ public struct GestureConfig: Equatable, Codable {
     public var boxScale = 1.0
     public var edgeOvershoot = 0.04
 
-    // Pinch
-    public var pinchEnter = 0.35
-    public var pinchExit = 0.5
-    /// Fingers closer than this "arm" the pinch: the pointer anchor switches from the fingertip
-    /// to the palm so the click does not drift as the finger curls toward the thumb.
-    public var pinchArm = 0.65
-    public var pinchMinDuration = 0.06
-    public var pinchRefractory = 0.12
-    public var clickFreezeDuration = 0.10
-    public var dragHoldDuration = 0.25
-    public var dragStartDistanceBox = 0.012
-    public var doubleClickInterval = 0.40
-    public var doubleClickRadiusBox = 0.02
-    /// A pinch must be this much smaller than the other fingers' pinches to be attributed to its
-    /// finger; this stops a middle-finger pinch from also reading as an index pinch.
-    public var pinchDominanceRatio = 0.75
-
     // Poses
     public var curlExtendedRatio = 1.45
     public var curlCurledRatio = 1.2
     public var poseConfirmDuration = 0.08
+    /// An open palm's thumb tip is at least this far (hand sizes) from every fingertip.
+    public var palmThumbClearance = 0.5
 
     // Engagement
     public var palmEngageEnabled = true
@@ -64,21 +44,12 @@ public struct GestureConfig: Equatable, Codable {
     public var handLostTimeout = 2.0
     public var handDropoutGrace = 0.15
 
-    // Scroll
+    // Scroll (two fists)
     public var scrollSpeed = 1.0               // multiplier
     public var scrollPointsPerBox = 1600.0     // fist travel of one box width scrolls this much
     public var naturalScrolling = true
-    public var momentumEnabled = true
-    public var momentumFriction = 4.0          // 1/s exponential decay rate
-    public var momentumMinSpeed = 40.0         // points/s below which momentum stops
-    public var momentumStartSpeed = 120.0      // release speed needed to start momentum
-
-    // Zoom
-    public var zoomEnabled = true
-
-    // App switcher (thumb + ring)
-    public var appSwitcherEnabled = false
-    public var appSwitcherStepBox = 0.08
+    public var momentumFriction = 4.0          // 1/s exponential decay rate of the glide
+    public var momentumMinSpeed = 40.0         // points/s below which the glide stops
 
     // Multi-display
     /// The hand stays on the display the mouse pointer was on when Wisp engaged (no edge
@@ -86,12 +57,7 @@ public struct GestureConfig: Equatable, Codable {
     public var stayOnEngagedDisplay = true
     public var displayJumpDwell = 0.4
 
-    // Dwell click
-    public var dwellClickEnabled = false
-    public var dwellClickDelay = 0.8
-    public var dwellRadiusBox = 0.008
-
-    // Hand preference for the pointing hand when two are visible.
+    /// Which hand points: `.left` makes the left hand the pointing hand.
     public var preferredHand: Chirality = .unknown
 
     public init() {}
@@ -113,7 +79,7 @@ extension GestureConfig {
         return try JSONDecoder().decode(GestureConfig.self, from: JSONSerialization.data(withJSONObject: merged))
     }
 
-    /// Overlay `incoming` on `defaults`, recursing into nested objects (`velocity`, `filter`),
+    /// Overlay `incoming` on `defaults`, recursing into nested objects (`shake`, `filter`),
     /// so a file missing one nested key still keeps that key's default.
     private static func mergeLenient(defaults: [String: Any], incoming: [String: Any]) -> [String: Any] {
         var merged = defaults

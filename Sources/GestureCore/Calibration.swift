@@ -73,28 +73,25 @@ public struct Homography: Equatable, Codable {
     }
 }
 
-/// Where the user's fingertip was (in camera space) when pointing at each screen corner,
-/// plus their personal pinch thresholds. Stored per display.
+/// Where the user's fingertip was (in camera space) when pointing at each screen corner.
+/// Stored per display. (Profiles saved by older versions also carry pinch thresholds; decoding
+/// ignores them.)
 public struct CalibrationProfile: Equatable, Codable {
     /// Camera-space fingertip positions for the screen's top-left, top-right, bottom-right and
     /// bottom-left corners, in that order.
     public var corners: [Point2]
-    public var pinchEnter: Double
-    public var pinchExit: Double
     /// True when this came from a real calibration rather than the defaults.
     public var isCalibrated: Bool
 
-    public init(corners: [Point2], pinchEnter: Double, pinchExit: Double, isCalibrated: Bool) {
+    public init(corners: [Point2], isCalibrated: Bool) {
         self.corners = corners
-        self.pinchEnter = pinchEnter
-        self.pinchExit = pinchExit
         self.isCalibrated = isCalibrated
     }
 
     /// A centered box covering ~42% of the image width, mirrored (the user's right, which is
     /// the camera's left, maps to the screen's right) and a little above center because people
     /// hold their hand up, not in their lap.
-    public static func defaultProfile(pinchEnter: Double = 0.35, pinchExit: Double = 0.5) -> CalibrationProfile {
+    public static func defaultProfile() -> CalibrationProfile {
         let center = Point2(0.5, 0.45)
         let halfWidth = 0.21
         let halfHeight = 0.23
@@ -105,7 +102,7 @@ public struct CalibrationProfile: Equatable, Codable {
                 Point2(center.x - halfWidth, center.y + halfHeight), // screen bottom-right
                 Point2(center.x + halfWidth, center.y + halfHeight), // screen bottom-left
             ],
-            pinchEnter: pinchEnter, pinchExit: pinchExit, isCalibrated: false)
+            isCalibrated: false)
     }
 
     /// Rejects quads that would produce a nonsensical mapping: too small (the user did not move
@@ -147,8 +144,7 @@ public struct ActiveBoxMapper: Equatable {
     private let homography: Homography
 
     public init(profile: CalibrationProfile, boxScale: Double = 1.0, edgeOvershoot: Double = 0.04) {
-        let usable = profile.isUsable ? profile : CalibrationProfile.defaultProfile(
-            pinchEnter: profile.pinchEnter, pinchExit: profile.pinchExit)
+        let usable = profile.isUsable ? profile : CalibrationProfile.defaultProfile()
         self.profile = usable
         // A zero scale collapses the box (the solve fails and the identity map is unmirrored);
         // a negative one rotates it 180 degrees. Neither is a sensitivity, so use the default.
@@ -224,13 +220,8 @@ public struct CornerCalibrationSession {
     public private(set) var captured: [Point2] = []
     private var cornerStart: Double?
     private var window: [(time: Double, point: Point2)] = []
-    private let pinchEnter: Double
-    private let pinchExit: Double
 
-    public init(pinchEnter: Double = 0.35, pinchExit: Double = 0.5) {
-        self.pinchEnter = pinchEnter
-        self.pinchExit = pinchExit
-    }
+    public init() {}
 
     /// Feed the pointing fingertip (camera space) or nil when no hand is visible.
     public mutating func process(fingertip: Point2?, at time: Double) -> Status {
@@ -266,8 +257,7 @@ public struct CornerCalibrationSession {
     }
 
     private func finish() -> Status {
-        let profile = CalibrationProfile(corners: captured, pinchEnter: pinchEnter,
-                                         pinchExit: pinchExit, isCalibrated: true)
+        let profile = CalibrationProfile(corners: captured, isCalibrated: true)
         return profile.isUsable
             ? .finished(profile)
             : .failed(reason: "The four corners didn't form a usable box; try pointing more widely")
@@ -277,62 +267,5 @@ public struct CornerCalibrationSession {
         guard !points.isEmpty else { return .zero }
         let xs = points.map { $0.x }.sorted(), ys = points.map { $0.y }.sorted()
         return Point2(xs[xs.count / 2], ys[ys.count / 2])
-    }
-}
-
-/// "Pinch three times": learns this hand's closed and open pinch distances and derives
-/// thresholds from them, so small hands far from the camera and large hands close to it both
-/// get a reliable click.
-public struct PinchCalibrationSession {
-    public enum Status: Equatable {
-        case collecting(pinchesSeen: Int)
-        case finished(enter: Double, exit: Double)
-        case failed(reason: String)
-    }
-
-    public var requiredPinches = 3
-    public var timeout = 12.0
-    private var samples: [Double] = []
-    private var start: Double?
-    private var isClosed = false
-    public private(set) var pinchesSeen = 0
-
-    public init() {}
-
-    public mutating func process(pinchDistance: Double?, at time: Double) -> Status {
-        if start == nil { start = time }
-        if time - (start ?? time) > timeout {
-            return pinchesSeen > 0 ? result() : .failed(reason: "No pinches seen")
-        }
-        guard let d = pinchDistance else { return .collecting(pinchesSeen: pinchesSeen) }
-        samples.append(d)
-        // Count pinches with a generous fixed hysteresis; the precise thresholds come from the
-        // distribution of samples afterwards.
-        if !isClosed && d < 0.32 {
-            isClosed = true
-        } else if isClosed && d > 0.55 {
-            isClosed = false
-            pinchesSeen += 1
-            if pinchesSeen >= requiredPinches { return result() }
-        }
-        return .collecting(pinchesSeen: pinchesSeen)
-    }
-
-    private func result() -> Status {
-        let (enter, exit) = Self.thresholds(from: samples)
-        return .finished(enter: enter, exit: exit)
-    }
-
-    /// Enter at 35% of the way from fully closed to open, exit a clear margin above that.
-    /// Clamped so a sloppy test can never produce thresholds that fire on a relaxed hand.
-    public static func thresholds(from samples: [Double]) -> (enter: Double, exit: Double) {
-        guard samples.count >= 5 else { return (0.35, 0.5) }
-        let sorted = samples.sorted()
-        let closed = sorted[Int(Double(sorted.count - 1) * 0.05)]
-        let open = sorted[Int(Double(sorted.count - 1) * 0.9)]
-        let range = max(open - closed, 0.1)
-        let enter = clamp(closed + 0.35 * range, 0.2, 0.45)
-        let exit = clamp(enter + max(0.1, 0.2 * range), enter + 0.08, 0.7)
-        return (enter, exit)
     }
 }

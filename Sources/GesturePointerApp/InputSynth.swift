@@ -30,7 +30,6 @@ final class InputSynth {
 
     private let source: CGEventSource?
     private var leftButtonDown = false
-    private var commandHeld = false
     private var scrollRemainder = (dx: 0.0, dy: 0.0)
     private var zoomLogAccumulator = 0.0
     private var lastLocation: CGPoint?
@@ -54,7 +53,7 @@ final class InputSynth {
             [.permitLocalMouseEvents, .permitLocalKeyboardEvents, .permitSystemDefinedEvents],
             state: .eventSuppressionStateSuppressionInterval)
         // The default filter while a synthetic drag is in progress blocks the real mouse;
-        // permit it there too, so a pinch-drag can never lock out the user's own mouse.
+        // permit it there too, so a fist drag can never lock out the user's own mouse.
         source?.setLocalEventsFilterDuringSuppressionState(
             [.permitLocalMouseEvents, .permitLocalKeyboardEvents, .permitSystemDefinedEvents],
             state: .eventSuppressionStateRemoteMouseDrag)
@@ -80,30 +79,20 @@ final class InputSynth {
             let p = CGPoint(x: x, y: y)
             postMouse(.leftMouseDown, at: p, button: .left, clickState: Int64(count))
             postMouse(.leftMouseUp, at: p, button: .left, clickState: Int64(count))
-        case let .rightClick(x, y):
-            let p = CGPoint(x: x, y: y)
-            postMouse(.rightMouseDown, at: p, button: .right)
-            postMouse(.rightMouseUp, at: p, button: .right)
         case let .scroll(dx, dy, phase):
             postScroll(dx: dx, dy: dy, phase: phase)
         case let .zoom(factor, phase):
             postZoom(factor: factor, phase: phase)
-        case let .key(stroke):
-            postKey(stroke)
         }
     }
 
-    /// Release anything we are holding (mouse button, ⌘). Called on disengage and quit, so a
-    /// crash-free exit can never leave the system with a stuck button or modifier.
+    /// Release the mouse button if we are holding it. Called on disengage and quit, so a
+    /// crash-free exit can never leave the system with a stuck button.
     func releaseAll() {
         guard postsEvents else { return }
         if leftButtonDown, let p = lastLocation ?? CGEvent(source: nil)?.location {
             postMouse(.leftMouseUp, at: p, button: .left)
             leftButtonDown = false
-        }
-        if commandHeld {
-            postKeyCode(KeyCode.command, down: false, flags: [])
-            commandHeld = false
         }
     }
 
@@ -213,57 +202,8 @@ final class InputSynth {
 
     /// Virtual key codes (kVK_* from HIToolbox's Events.h, ANSI layout).
     enum KeyCode {
-        static let tab: CGKeyCode = 0x30
-        static let escape: CGKeyCode = 0x35
         static let equal: CGKeyCode = 0x18
         static let minus: CGKeyCode = 0x1B
-        static let command: CGKeyCode = 0x37
-        static let shift: CGKeyCode = 0x38
-    }
-
-    private func keyCode(for key: VirtualKey) -> CGKeyCode {
-        switch key {
-        case .tab: return KeyCode.tab
-        case .escape: return KeyCode.escape
-        case .equal: return KeyCode.equal
-        case .minus: return KeyCode.minus
-        case .command: return KeyCode.command
-        case .shift: return KeyCode.shift
-        }
-    }
-
-    private func flags(for modifiers: KeyModifiers) -> CGEventFlags {
-        var flags: CGEventFlags = []
-        if modifiers.contains(.command) || commandHeld { flags.insert(.maskCommand) }
-        if modifiers.contains(.shift) { flags.insert(.maskShift) }
-        if modifiers.contains(.option) { flags.insert(.maskAlternate) }
-        if modifiers.contains(.control) { flags.insert(.maskControl) }
-        return flags
-    }
-
-    private func postKey(_ stroke: KeyStroke) {
-        let code = keyCode(for: stroke.key)
-        if stroke.key == .command {
-            // Holding ⌘ (app switcher): the modifier state lives in the HID system state.
-            switch stroke.action {
-            case .down:
-                commandHeld = true
-                postKeyCode(code, down: true, flags: .maskCommand)
-            case .up:
-                commandHeld = false
-                postKeyCode(code, down: false, flags: [])
-            case .press:
-                postKeyCode(code, down: true, flags: .maskCommand)
-                postKeyCode(code, down: false, flags: [])
-            }
-            return
-        }
-        let eventFlags = flags(for: stroke.modifiers)
-        switch stroke.action {
-        case .down: postKeyCode(code, down: true, flags: eventFlags)
-        case .up: postKeyCode(code, down: false, flags: eventFlags)
-        case .press: postKeyPress(code, flags: eventFlags)
-        }
     }
 
     private func postKeyPress(_ code: CGKeyCode, flags: CGEventFlags) {

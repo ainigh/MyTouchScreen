@@ -36,8 +36,6 @@ final class AppController: MenuBarActions {
     private var welcomeWindow: NSWindow?
     private var settingsWindow: NSWindow?
     private var replayer: Replayer?
-    private var guided: GuidedRecording?
-    private var guidedRecordingStep: TuningScript.Step?
 
     private var cameraMode: CameraMode = .off
     private var engaged = false
@@ -109,7 +107,6 @@ final class AppController: MenuBarActions {
         if let path = options.recordPath {
             let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
             startRecording(to: url)
-            if options.script { startGuidedSession(url) }
         }
         if !settings.hasCompletedOnboarding || Permissions.cameraState != .granted || !axGranted {
             showWelcome()
@@ -144,10 +141,7 @@ final class AppController: MenuBarActions {
     }
 
     func shutdown() {
-        // A guided session cut short still keeps the labels of the prompts it finished.
-        let segments = guided?.stop() ?? []
-        guided = nil
-        pipeline.shutdown(segments: segments)
+        pipeline.shutdown()
         camera.stop()
         hotkey.unregister()
         if let mouseMonitor { NSEvent.removeMonitor(mouseMonitor) }
@@ -185,7 +179,6 @@ final class AppController: MenuBarActions {
 
     private func applySettings() {
         pushConfigIfChanged()
-        overlay?.showWhyNot = settings.showWhyNot
         if appliedCalibration != settings.calibration {
             appliedCalibration = settings.calibration
             pipeline.update(calibration: settings.calibration)
@@ -239,8 +232,7 @@ final class AppController: MenuBarActions {
 
     private func desiredCameraMode() -> CameraMode {
         guard options.replayPath == nil, Permissions.cameraState == .granted else { return .off }
-        // A guided recording needs every frame, even if the palm disengaged meanwhile.
-        if calibration != nil || engaged || guided != nil { return .full }
+        if calibration != nil || engaged { return .full }
         guard settings.enabled else { return .off }
         // Standby watches for the engage palms (and feeds the preview) at a few fps.
         if settings.config.palmEngageEnabled || settings.showPreview { return .standby }
@@ -272,7 +264,6 @@ final class AppController: MenuBarActions {
 
     private func handleUpdate(_ snapshot: PointerSnapshot, _ events: [PointerEvent]) {
         lastSnapshot = snapshot
-        if let session = guided, !session.isRunning, !snapshot.hands.isEmpty { session.start() }
         for event in events { handle(event, snapshot: snapshot) }
         overlay?.update(snapshot, status: menuStatus)
         preview?.update(hands: snapshot.hands, primaryIndex: snapshot.primaryHandIndex)
@@ -300,13 +291,13 @@ final class AppController: MenuBarActions {
             overlay?.toast(text, symbol: "hand.raised", tint: Theme.idle)
             removeMouseMonitor()
             updateCameraMode()
-        // During a guided session nothing is posted and the click sound marks each recording.
-        case .clicked, .rightClicked, .dwellClicked:
-            if guided == nil { sounds.play(.click) }
+        case .clicked(let count):
+            sounds.play(.click)
+            if let cursor = snapshot.cursor { overlay?.flashClick(at: cursor, count: count) }
         case .dragStarted:
-            if guided == nil { sounds.play(.dragStart) }
+            sounds.play(.dragStart)
         case .dragEnded:
-            if guided == nil { sounds.play(.drop) }
+            sounds.play(.drop)
         case .scrollEnded:
             if snapshot.momentumActive { sounds.play(.scrollFade) }
         case .externalMouseTookOver:
@@ -315,9 +306,7 @@ final class AppController: MenuBarActions {
                 lastTakeoverToast = now
                 overlay?.toast("Mouse in control", symbol: "computermouse", tint: Theme.idle)
             }
-        case .segmentClassified(let report):
-            overlay?.flash(report)
-        case .scrollStarted, .zoomStarted, .zoomEnded, .appSwitcherOpened, .appSwitcherClosed, .displayChanged:
+        case .scrollStarted, .zoomStarted, .zoomEnded, .displayChanged:
             break
         }
     }
@@ -419,114 +408,6 @@ final class AppController: MenuBarActions {
         }
     }
 
-    // MARK: Guided tuning session
-
-    private func startGuidedSession(_ url: URL) {
-        guard recordingURL != nil else { return }   // startRecording already said why
-        guard Permissions.cameraState == .granted else {
-            print("error: the guided session needs camera access. Grant it in the Setup window, then run again.")
-            overlay?.toast("Grant camera access, then run --script again", symbol: "video.slash", tint: Theme.warning)
-            return
-        }
-        // Flicks during the session must not click whatever is under the cursor.
-        pipeline.configureOutput(postsEvents: false, logsIntents: false, printsFrames: false)
-        if !settings.enabled { settings.enabled = true }
-        let session = GuidedRecording()
-        session.onPhase = { [weak self] phase in self?.showGuided(phase) }
-        session.onFinish = { [weak self] segments in self?.finishGuidedSession(segments) }
-        guided = session
-        pipeline.setEngaged(true, reason: .hotkey)
-        updateCameraMode()
-        print(String(format: "Guided session: %d prompts, about %.0f minutes. Recording to %@", session.script.steps.count,
-                     session.script.duration / 60, url.path))
-        // The clock starts on the first frame with a hand (see handleUpdate).
-        overlay?.showPrompt("Raise your pointing hand to begin", detail: "The guided session starts when Wisp sees it")
-    }
-
-    private func showGuided(_ phase: TuningScript.Phase) {
-        switch phase {
-        case .prompt(let step):
-            guidedRecordingStep = nil
-            overlay?.showPrompt(step.label.prompt, detail: "\(step.repetition) of \(step.repetitions) — get ready")
-        case let .recording(step, remaining):
-            if guidedRecordingStep != step {
-                guidedRecordingStep = step
-                sounds.play(.click)
-            }
-            overlay?.showPrompt(step.label.prompt, detail: String(format: "%d of %d — recording %.0f s",
-                                                                  step.repetition, step.repetitions, remaining.rounded(.up)),
-                                recording: true)
-        case .pause(let next):
-            guidedRecordingStep = nil
-            overlay?.showPrompt(next.label.prompt, detail: "Next: \(next.repetition) of \(next.repetitions)")
-        case .finished:
-            overlay?.showPrompt(nil)
-        }
-    }
-
-    private func finishGuidedSession(_ segments: [LabeledSegment]) {
-        guided = nil
-        guidedRecordingStep = nil
-        overlay?.showPrompt(nil)
-        // Don't hand the real cursor to a hand that was only performing prompts.
-        pipeline.setEngaged(false, reason: .menu)
-        pipeline.configureOutput(postsEvents: !options.dryRun, logsIntents: options.dryRun,
-                                 printsFrames: options.noOverlay)
-        guard let url = recordingURL else { return }
-        recordingURL = nil
-        pipeline.stopRecording(segments: segments) { [weak self] count in
-            print("Guided session saved: \(count) frames, \(segments.count) labeled segments in \(url.path)")
-            print("Next: swift run -c release tune \(url.path)")
-            self?.overlay?.toast("Session saved — \(segments.count) gestures", symbol: "checkmark.circle.fill")
-            NSWorkspace.shared.activateFileViewerSelecting([url])
-        }
-        updateCameraMode()
-    }
-
-    // MARK: Windows
-
-    func showWelcome() {
-        if let welcomeWindow {
-            welcomeWindow.makeKeyAndOrderFront(nil)
-            NSApp.activate()
-            return
-        }
-        let view = WelcomeView(
-            monitor: permissionMonitor, settings: settings, cameras: Camera.availableCameras(),
-            onCalibrate: { [weak self] in
-                self?.finishOnboarding()
-                self?.startCalibration()
-            },
-            onFinish: { [weak self] in
-                self?.finishOnboarding()
-                self?.overlay?.toast("Raise both open palms to engage", symbol: "hand.raised")
-            })
-        let window = NSWindow(contentViewController: NSHostingController(rootView: view))
-        window.title = "Wisp Setup"
-        window.styleMask = [.titled, .closable]
-        window.isReleasedWhenClosed = false
-        window.center()
-        welcomeWindow = window
-        window.makeKeyAndOrderFront(nil)
-        NSApp.activate()
-    }
-
-    private func finishOnboarding() {
-        settings.hasCompletedOnboarding = true
-        welcomeWindow?.close()
-        welcomeWindow = nil
-        refreshPermissionStatus()
-    }
-
-    // MARK: MenuBarActions
-
-    var menuStatus: MenuBarStatus {
-        if Permissions.cameraState != .granted || !axGranted { return .needsPermission }
-        if !settings.enabled { return .off }
-        return engaged ? .engaged : .standby
-    }
-
-    var isEnabled: Bool { settings.enabled }
     var isRecording: Bool { recordingURL != nil }
     var cameras: [CameraInfo] { Camera.availableCameras() }
     var selectedCameraID: String? { settings.cameraID }
@@ -536,13 +417,7 @@ final class AppController: MenuBarActions {
         return launchAtLogin.isEnabled
     }
     var hotkeyDisplay: String { settings.hotkey.displayString }
-    var engagedHint: String {
-        switch settings.config.inputModel {
-        case .dwellShake: return "point; rest, then wiggle to click or fist to drag; two fists zoom/scroll"
-        case .velocity: return "point, tap the air to click, flick to scroll"
-        case .pose: return "point, pinch to click"
-        }
-    }
+    var engagedHint: String { "point; rest, then wiggle to click or fist to drag; two fists zoom/scroll" }
     var versionLine: String { updater.versionLine }
     var updateState: Updater.State { updater.state }
 
@@ -636,10 +511,6 @@ final class AppController: MenuBarActions {
     }
 
     func toggleRecording() {
-        if let session = guided {
-            finishGuidedSession(session.stop())
-            return
-        }
         if let url = recordingURL {
             recordingURL = nil
             pipeline.stopRecording { [weak self] count in

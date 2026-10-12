@@ -1,7 +1,7 @@
 import Foundation
 
-/// Runs frame streams through a `PointerStateMachine` and scores what it did against labels.
-/// Shared by the tests and the `tune` tool so both measure exactly the same thing.
+/// Runs frame streams through a `PointerStateMachine` exactly as the app would (engaged at the
+/// first frame, momentum ticked between frames), for the tests and the replay tool.
 public enum Evaluation {
     public struct TimedOutput {
         public var time: Double
@@ -41,61 +41,5 @@ public enum Evaluation {
         var out = StepOutput()
         for o in outputs where o.time >= from && o.time <= to { out.append(o.output) }
         return out
-    }
-
-    public struct LabeledResult {
-        public var label: String
-        public var outcome: GestureOutcome
-        public var reports: [SegmentReport]
-    }
-
-    /// Run a labeled recording in one pass (state carries across segments, as it would live)
-    /// and summarize each labeled stretch.
-    public static func evaluate(_ recording: Recording, config: GestureConfig) -> [LabeledResult] {
-        let outputs = run(recording.frames, config: config, settle: 0)
-        return (recording.segments ?? []).map { segment in
-            let window = merged(outputs, from: segment.startTime, to: segment.endTime)
-            let reports = window.events.compactMap { event -> SegmentReport? in
-                if case let .segmentClassified(report) = event { return report } else { return nil }
-            }
-            return LabeledResult(label: segment.label, outcome: GestureOutcome.of(window.events), reports: reports)
-        }
-    }
-
-    /// Precision, recall and F1 of the action classes (labels expecting `.none` count as
-    /// negatives: anything they trigger is a false positive).
-    public struct Score: Equatable {
-        public var truePositives = 0
-        public var falsePositives = 0
-        public var falseNegatives = 0
-        public var correct = 0
-        public var total = 0
-
-        public var precision: Double { Double(truePositives) / Double(max(truePositives + falsePositives, 1)) }
-        public var recall: Double { Double(truePositives) / Double(max(truePositives + falseNegatives, 1)) }
-        public var f1: Double {
-            let p = precision, r = recall
-            return p + r > 0 ? 2 * p * r / (p + r) : 0
-        }
-        public var accuracy: Double { Double(correct) / Double(max(total, 1)) }
-    }
-
-    public static func score(_ results: [LabeledResult]) -> Score {
-        var score = Score()
-        for result in results {
-            guard let label = GestureLabel(rawValue: result.label) else { continue }
-            let expected = label.expected
-            score.total += 1
-            if result.outcome == expected { score.correct += 1 }
-            if expected == .none {
-                if result.outcome != .none { score.falsePositives += 1 }
-            } else if result.outcome == expected {
-                score.truePositives += 1
-            } else {
-                score.falseNegatives += 1
-                if result.outcome != .none { score.falsePositives += 1 }
-            }
-        }
-        return score
     }
 }

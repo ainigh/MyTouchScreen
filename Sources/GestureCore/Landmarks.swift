@@ -107,3 +107,12 @@ public struct TrackingFrame: Equatable {
         self.hands = hands
     }
 }
+
+extension HandFrame {
+    /// A camera point in hand space: mirrored (the user's right is +x) and isotropic (fractions
+    /// of the image width on both axes, +y down). Gesture thresholds are expressed here, so
+    /// they don't depend on screen size or the calibrated active box.
+    public func handSpace(_ p: Point2) -> Point2 {
+        Point2(1 - p.x, p.y / imageAspect)
+    }
+}
