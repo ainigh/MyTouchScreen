@@ -1,49 +1,39 @@
 import Foundation
 
-/// Hold & wiggle tunables. Distances in hand sizes (wrist → middle MCP), times in seconds.
+/// Wiggle-click tunables. Distances in hand sizes (wrist → middle MCP), times in seconds.
 public struct ShakeParams: Equatable, Codable {
-    /// Hold the cursor still this long and it locks in place.
-    public var lockTime = 1.0
-    /// "Still" = the cursor stays within this fraction of the screen width. A calm real
-    /// fingertip drifts the cursor 25–40 pt over a couple of seconds (owner's recording), so
-    /// this is wider than the Pose-mode dwell radius.
-    public var dwellRadiusBox = 0.025
-    /// A locked cursor wakes when the hand moves this far (hand sizes) from where it rested…
-    public var wakeDistance = 0.12
-    /// …and stays put this long after that: a wiggle within this time clicks where it is
-    /// locked, a fist presses there (drag), opening the fist drops.
-    public var wakeTime = 1.0
+    /// The tracked point moving faster than this (hand sizes per second) freezes the cursor:
+    /// fast motion is a gesture (a wiggle, closing the hand), not pointing. A click wiggle's
+    /// strokes run at about 3–6 hand sizes/s; calm pointing in the owner's recording mostly
+    /// stays at 1–2.5.
+    public var freezeSpeed = 2.5
+    /// A frozen cursor follows the hand again once it has been slower than this…
+    public var resumeSpeed = 1.2
+    /// …for this long. It then carries on from where it froze (like lifting and putting down a
+    /// mouse), so a fast move never moves the cursor.
+    public var resumeTime = 0.15
     /// Direction changes along one axis that make the click wiggle (left-right-left)…
     public var reversals = 2
-    /// …all within this window.
+    /// …all within this window…
     public var window = 1.0
+    /// …without resting at a turn for longer than this: a wiggle is one continuous back-and-forth.
+    public var maxPause = 0.2
     /// A movement only counts as a stroke (and its end as a direction change) once it has
     /// travelled this far, so tracker jitter and small corrections never add up to a wiggle.
     public var minStroke = 0.25
     /// A second wiggle click within this long of the first, at the same spot, is a double click.
     public var doubleClickWindow = 1.5
-    /// Below this speed (hand sizes per second) the hand counts as stopped after a click.
-    /// A resting real fingertip jitters at 0.35–0.8 hand sizes/s (owner's recording).
-    public var exitStillSpeed = 1.2
-
-    // Two fists: when the hands rest, their last stroke zooms (spread changed) or scrolls
-    // (both moved the same way).
-    /// A stroke must change the spread or move the hands this far (hand sizes) to count.
-    public var twoHandStroke = 0.3
-    /// The hands rest when both move slower than this (hand sizes per second)…
-    public var twoHandRestSpeed = 1.0
-    /// …for this long.
-    public var twoHandRestTime = 0.3
-    /// Zoom factor = (spread after / spread before) ^ zoomGain.
-    public var zoomGain = 1.0
-    /// A fist that opens (or a hand that drops out) for this long ends the two-fist gesture.
-    public var fistGoneTime = 0.2
+    /// "The same spot" for a double click: within this fraction of the screen width.
+    public var doubleClickRadiusBox = 0.025
+    /// A fist presses (starts a drag) once held this long. The owner's recording has fists
+    /// flickering for 0.1–0.2 s while the hand moves; a meant fist is held longer.
+    public var fistHoldTime = 0.25
 
     public init() {}
 }
 
 /// Counts direction changes of the fingertip along each axis. Enough changes on one axis within
-/// the window is a wiggle: the click gesture while the cursor is locked.
+/// the window is a wiggle: the click gesture.
 public struct ShakeDetector {
     public var params: ShakeParams
 
@@ -53,12 +43,19 @@ public struct ShakeDetector {
         /// Furthest point of the current stroke.
         var extreme = 0.0
         var extremeTime = 0.0
+        /// When the value first came close to where the extreme ended up (`turnValue`, within
+        /// a fifth of a stroke), and the last time it was still that close: how long the hand
+        /// paused at the turn. Jitter creeping the extreme along doesn't restart the pause.
+        var nearExtremeSince = 0.0
+        var nearExtremeUntil = 0.0
+        var turnValue = 0.0
         /// When each counted direction change happened, and when its stroke began.
         var changes: [(time: Double, strokeStart: Double)] = []
         var strokeStart = 0.0
         var origin: Double?
 
-        mutating func update(_ value: Double, at time: Double, threshold: Double) -> Bool {
+        mutating func update(_ value: Double, at time: Double, threshold: Double, maxPause: Double,
+                             minStrokeTime: Double) -> Bool {
             guard let start = origin else {
                 origin = value
                 extreme = value
@@ -72,25 +69,51 @@ public struct ShakeDetector {
                     direction = value > start ? 1 : -1
                     extreme = value
                     extremeTime = time
+                    startPause(value, at: time)
                 } else if abs(value - start) < threshold * 0.25 {
                     // Still near the resting point: the stroke hasn't really begun yet.
                     strokeStart = time
                 }
                 return false
             }
+            let band = threshold * 0.2
             if (value - extreme) * Double(direction) > 0 {
                 extreme = value
                 extremeTime = time
+                if (value - turnValue) * Double(direction) > band { startPause(value, at: time) }
+                nearExtremeUntil = time
                 return false
             }
+            if abs(value - extreme) < band { nearExtremeUntil = time }
             guard abs(value - extreme) >= threshold else { return false }
-            // Turned back far enough: a direction change at the extreme.
-            changes.append((extremeTime, strokeStart))
-            strokeStart = extremeTime
+            // Turned back far enough: a direction change at the extreme…
+            let paused = nearExtremeUntil - nearExtremeSince > maxPause
+            let turnStart = extremeTime
             direction = -direction
             extreme = value
             extremeTime = time
+            startPause(value, at: time)
+            if turnStart - strokeStart < minStrokeTime {
+                // A stroke no human makes: a tracker glitch (one frame out and back). Start over.
+                self = AxisTracker()
+                return false
+            }
+            if paused {
+                // …unless the hand rested there first: then this is a fresh start, not part of a
+                // back-and-forth (two pinches or taps a second apart are not a wiggle).
+                changes.removeAll()
+                strokeStart = turnStart
+                return false
+            }
+            changes.append((turnStart, strokeStart))
+            strokeStart = turnStart
             return true
+        }
+
+        private mutating func startPause(_ value: Double, at time: Double) {
+            turnValue = value
+            nearExtremeSince = time
+            nearExtremeUntil = time
         }
 
         mutating func reset() { self = AxisTracker() }
@@ -98,6 +121,9 @@ public struct ShakeDetector {
 
     private var x = AxisTracker()
     private var y = AxisTracker()
+
+    /// Strokes quicker than this are tracker glitches, not hand movement.
+    static let minStrokeTime = 0.07
 
     public init(params: ShakeParams) {
         self.params = params
@@ -122,7 +148,8 @@ public struct ShakeDetector {
         for vertical in [true, false] {
             let value = vertical ? centroid.y : centroid.x
             var tracker = vertical ? y : x
-            if tracker.update(value, at: time, threshold: threshold) {
+            if tracker.update(value, at: time, threshold: threshold, maxPause: params.maxPause,
+                              minStrokeTime: Self.minStrokeTime) {
                 tracker.changes.removeAll { time - $0.time > params.window }
                 if tracker.changes.count >= needed {
                     let start = tracker.changes[tracker.changes.count - needed].strokeStart

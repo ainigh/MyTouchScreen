@@ -6,7 +6,7 @@
 #   make install  install into ~/Applications (same place install.sh uses) and open it
 #   make test     run the GestureCore test suite
 #   make check    static checks (unfinished markers, imports, Info.plist)
-#   make replay-demo  run a synthetic click / drag / zoom / scroll session through the app (no camera)
+#   make replay-demo  run a synthetic click / drag session through the app (no camera)
 
 APP := build/GesturePointer.app
 BIN := $(APP)/Contents/MacOS/GesturePointer

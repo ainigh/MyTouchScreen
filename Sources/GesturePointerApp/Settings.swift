@@ -258,7 +258,7 @@ private struct PointerSettings: View {
 private struct GestureSettings: View {
     @ObservedObject var settings: AppSettings
 
-    private let help = "Point with your right hand. Hold still for a second and the cursor locks; it stays put for a second after you move again. In that second: wiggle (left-right-left) to click where it is locked, wiggle twice to double-click, or make a fist to press and drag; open the fist to drop. Both hands as fists: spread them apart and rest to zoom in, bring them together and rest to zoom out, move both the same way and rest to scroll. Only the last stroke before you rest counts, so close-then-widen repeats a zoom in. Both open palms turn Wisp on and off. Nothing else clicks."
+    private let help = "Point with your right hand: the cursor follows your index finger while you move calmly. Moving fast (as fast as a wiggle) never moves it — it holds still until your hand calms down, then carries on from there. Wiggle (left-right-left) to click where the cursor is, any time; wiggle again soon after for a double click. Make a fist and hold it a moment to press and drag; open it to drop. Both open palms turn Wisp on and off. Nothing else clicks."
 
     var body: some View {
         Form {
@@ -266,15 +266,16 @@ private struct GestureSettings: View {
                 Text(help)
                     .font(.caption).foregroundStyle(.secondary)
             }
-            Section("Lock, click and drag") {
-                ValueSlider(title: "Hold still to lock the cursor", value: $settings.config.shake.lockTime,
-                            range: 0.4...3.0, format: "%.1f s")
-                ValueSlider(title: "Locked after moving again", value: $settings.config.shake.wakeTime,
-                            range: 0.5...2.0, format: "%.1f s",
-                            help: "How long the cursor stays put once the hand moves again. Wiggle within this time to click, or make a fist to drag.")
-                ValueSlider(title: "Still means within", value: $settings.config.shake.dwellRadiusBox,
-                            range: 0.003...0.03, format: "%.3f",
-                            help: "Fraction of the screen width the cursor may wander while you hold still.")
+            Section("Fast movement") {
+                ValueSlider(title: "Freeze the cursor above", value: $settings.config.shake.freezeSpeed,
+                            range: 1.5...6.0, format: "%.1f hands/s",
+                            help: "Hand speed (hand lengths per second) at which the cursor stops following. Lower it if wiggles nudge the cursor; raise it if quick pointing freezes it.")
+                ValueSlider(title: "Follow again below", value: $settings.config.shake.resumeSpeed,
+                            range: 0.5...2.0, format: "%.1f hands/s")
+                ValueSlider(title: "…after calm for", value: $settings.config.shake.resumeTime,
+                            range: 0.05...0.5, format: "%.2f s")
+            }
+            Section("Click and drag") {
                 Stepper("Click wiggle: \(settings.config.shake.reversals) changes of direction",
                         value: $settings.config.shake.reversals, in: 1...5)
                 ValueSlider(title: "Click wiggle: within", value: $settings.config.shake.window,
@@ -284,23 +285,10 @@ private struct GestureSettings: View {
                             help: "Shorter back-and-forth movements are ignored, so a shaky hand never clicks.")
                 ValueSlider(title: "Double click: second wiggle within", value: $settings.config.shake.doubleClickWindow,
                             range: 0.5...3.0, format: "%.1f s")
-            }
-            Section("Two fists: zoom and scroll") {
-                ValueSlider(title: "Smallest stroke", value: $settings.config.shake.twoHandStroke,
-                            range: 0.1...1.0, format: "%.2f × hand",
-                            help: "How far the fists must spread, close or move together before resting for it to zoom or scroll.")
-                ValueSlider(title: "Rest for", value: $settings.config.shake.twoHandRestTime,
-                            range: 0.1...1.0, format: "%.2f s")
-                ValueSlider(title: "Zoom strength", value: $settings.config.shake.zoomGain,
-                            range: 0.5...3.0, format: "%.1f×")
+                ValueSlider(title: "Fist: hold before it presses", value: $settings.config.shake.fistHoldTime,
+                            range: 0.1...1.0, format: "%.2f s",
+                            help: "A fist that only flickers for a moment while you move never starts a drag.")
                 Button("Reset gestures to defaults") { settings.config.shake = ShakeParams() }
-            }
-            Section("Scroll and zoom") {
-                ValueSlider(title: "Scroll speed", value: $settings.config.scrollSpeed, range: 0.25...4, format: "%.2f×")
-                ScrollDirectionToggles(settings: settings)
-                Picker("Zoom sends", selection: $settings.zoomStyle) {
-                    ForEach(ZoomStyle.allCases, id: \.self) { Text($0.label).tag($0) }
-                }
             }
             Section("Engage") {
                 Toggle("Both open palms toggle Wisp on and off", isOn: $settings.config.palmEngageEnabled)
@@ -314,20 +302,6 @@ private struct GestureSettings: View {
             }
         }
         .formStyle(.grouped)
-    }
-}
-
-/// Natural direction, or follow whatever System Settings says.
-@MainActor
-private struct ScrollDirectionToggles: View {
-    @ObservedObject var settings: AppSettings
-
-    var body: some View {
-        Toggle("Follow the system scroll direction", isOn: $settings.scrollFollowsSystem)
-        Toggle("Natural direction (content follows your hand)", isOn: Binding(
-            get: { settings.scrollFollowsSystem ? AppSettings.systemNaturalScrolling : settings.config.naturalScrolling },
-            set: { settings.config.naturalScrolling = $0 }))
-            .disabled(settings.scrollFollowsSystem)
     }
 }
 

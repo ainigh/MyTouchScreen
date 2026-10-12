@@ -143,7 +143,7 @@ struct WelcomeView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Welcome to Wisp")
                         .font(.system(size: 22, weight: .semibold, design: .rounded))
-                    Text("Point at the screen. Rest, then wiggle to click or make a fist to drag. Two fists zoom and scroll.")
+                    Text("Point at the screen. Wiggle your finger to click, make a fist to drag. Fast movement never moves the cursor.")
                         .foregroundStyle(.secondary)
                 }
             }

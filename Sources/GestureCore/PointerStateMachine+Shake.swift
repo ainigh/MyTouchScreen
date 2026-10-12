@@ -1,29 +1,22 @@
 import Foundation
 
-/// Hold & wiggle: the gestures. This is the only input model: every click is a wiggle in the
-/// wake window, so no ordinary hand movement or pose can click by accident.
+/// The gestures. Only two things are tracked on the pointing hand: the index fingertip and the
+/// fist.
 ///
-/// One hand (the pointing hand):
-/// - movement moves the cursor (it follows the index fingertip);
-/// - holding the cursor still for `shake.lockTime` locks it in place. When the hand moves again
-///   the cursor stays locked for `shake.wakeTime` more — the wake window. No gesture in that
-///   time: the cursor unlocks and goes to where the hand points;
-/// - a wiggle (`shake.reversals` direction changes along one axis) while locked or in the wake
-///   window clicks where the cursor is locked. The cursor stays locked, waiting for the next
-///   movement, so wiggling again clicks again (a double click when quick). This is the only way
-///   this model clicks;
-/// - a fist while locked or in the wake window presses there: a drag. The cursor then follows
-///   the fist (its palm, since the curled finger is no use) under the same lock rules: it locks
-///   when the fist rests and waits a second after it moves on. Opening the fist drops where the
-///   cursor is — the locked point if it rested — and leaves the cursor locked there.
+/// - Slow movement moves the cursor (it follows the index fingertip).
+/// - Fast movement — as fast as a wiggle (`shake.freezeSpeed`) — never moves it: the cursor
+///   freezes where it was just before the burst began and stays there until the hand has calmed
+///   down, then carries on from that point. So a wiggle, a flick or the curl of a closing hand
+///   leaves the cursor where the user aimed.
+/// - A wiggle (`shake.reversals` direction changes along one axis) clicks, any time, with no
+///   waiting: at the frozen point, or (a wiggle slow enough not to freeze) where the cursor was
+///   when the wiggle began. A second wiggle soon after at the same spot is a double click.
+/// - A fist presses where the cursor was just before the hand closed: a drag. The cursor then
+///   follows the fist's palm (the curled finger is no use), with the same freeze on fast motion.
+///   Opening the fist drops where the cursor is.
 ///
-/// Two hands:
-/// - both open palms, held still: engage / disengage (see `updatePalmEngagement`);
-/// - both fists: zoom and scroll (see `TwoFistGesture`). When the fists rest, their last stroke
-///   decides: spread wider → zoom in, closer → zoom out, both moved one way → scroll that way.
-///   The cursor stays locked throughout.
-///
-/// `preferredHand = .left` makes the left hand the pointing hand.
+/// Both open palms held still engage / disengage (see `updatePalmEngagement`); the other hand
+/// does nothing else. `preferredHand = .left` makes the left hand the pointing hand.
 extension PointerStateMachine {
     // MARK: Hands
 
@@ -54,14 +47,28 @@ extension PointerStateMachine {
         state == .dragging ? hand.palmCenter : hand[.indexTip]
     }
 
-    /// Tracked-point speed in hand sizes per second, lightly smoothed.
+    /// Tracked-point speed in hand sizes per second: the slower of the last two two-frame
+    /// speeds. A one-frame tracker glitch (out and straight back) makes only one of them fast,
+    /// so it never reads as fast motion; a real fast movement makes both fast.
     func updateTipSpeed(_ hand: HandFrame, at time: Double) {
         let tip = hand.handSpace(trackedPoint(hand))
-        if let last = lastTip, time > last.time {
-            let instant = tip.distance(to: last.point) / max(hand.handSize, 1e-4) / (time - last.time)
-            tipSpeed += (instant - tipSpeed) * 0.4
+        let size = max(hand.handSize, 1e-4)
+        recentTips.append((time, tip))
+        if recentTips.count > 4 { recentTips.removeFirst(recentTips.count - 4) }
+        func speed(from a: (time: Double, point: Point2), to b: (time: Double, point: Point2)) -> Double {
+            b.time > a.time ? b.point.distance(to: a.point) / size / (b.time - a.time) : 0
         }
-        lastTip = (time, tip)
+        let n = recentTips.count
+        latestTipSpeed = n >= 2 ? speed(from: recentTips[n - 2], to: recentTips[n - 1]) : 0
+        if n >= 4 {
+            tipSpeed = min(speed(from: recentTips[n - 3], to: recentTips[n - 1]),
+                           speed(from: recentTips[n - 4], to: recentTips[n - 2]))
+        } else if n >= 2 {
+            tipSpeed = speed(from: recentTips[n - 2], to: recentTips[n - 1])
+        } else {
+            tipSpeed = 0
+        latestTipSpeed = 0
+        }
     }
 
     // MARK: Frame
@@ -70,41 +77,113 @@ extension PointerStateMachine {
         var out = StepOutput()
         let suppressed = time < outputSuppressedUntil
         shakeDetector.params = config.shake
+        if hand.confidence < Self.minMotionConfidence {
+            // A frame Vision was unsure about: its landmarks are scattered, so it says nothing
+            // about motion. Hold the cursor for this frame.
+            return out
+        }
         updateTipSpeed(hand, at: time)
         let isFist = primary.state.pose == .fist
+        if !isFist && primary.observedPose != .fist { fistNeedsOpenHand = false }
 
         if bothPalmsOpen && state == .hover {
             // Two open palms are the engage / disengage gesture: hold the cursor where it is.
-            holdCursorLocked(hand, at: time)
+            if let point = lastEmittedCursor ?? cursor { freezeCursor(at: point) }
+            freeze?.calmSince = nil
+            shakeDetector.reset()
             return out
-        }
-
-        // Two fists: zoom / scroll. Never from a drag (its button is down).
-        if state == .twoFists || (state == .hover && other != nil && isFist) {
-            out.append(updateTwoFists(hand, other: other, at: time, suppressed: suppressed))
-            if state == .twoFists { return out }
         }
 
         if state == .dragging && !isFist {
-            out.append(drop(hand, at: time))
+            out.append(drop(at: time))
             return out
         }
 
-        // Cursor: the tracked point, with the offset left by a lock draining as the hand moves.
+        if state == .hover && isFist && !fistNeedsOpenHand {
+            // Hold the cursor where it was before the hand closed; press once the fist has been
+            // held a moment (a fist that flickers for a few frames while moving never presses).
+            let pending = pendingFist ?? (time, freeze?.point ?? cursorPoint(at: time - config.poseConfirmDuration - Self.fistLookback))
+            pendingFist = pending
+            freezeCursor(at: pending.point)
+            if time - pending.since >= config.shake.fistHoldTime {
+                out.append(press(hand, at: pending.point, time: time, suppressed: suppressed))
+            } else {
+                out.append(emitMove(pending.point, suppressed: suppressed))
+            }
+            return out
+        }
+        pendingFist = nil
+
+        out.append(updateCursor(hand, at: time, suppressed: suppressed))
+
+        // Wiggles click only with the button up (mid-drag they are just motion).
+        if state == .hover, let sample = medianTip(),
+           let wiggle = shakeDetector.update(point: sample.point, handSize: hand.handSize, at: sample.time) {
+            let point = freeze?.point ?? cursorPoint(at: wiggle.startTime)
+            freezeCursor(at: point)
+            out.append(emitMove(point, suppressed: suppressed))
+            if !suppressed { out.append(wiggleClick(at: point, time: time)) }
+        }
+        return out
+    }
+
+    /// The tracked point, median of the last three frames per axis (timed at the middle one): a
+    /// one-frame tracker glitch disappears instead of looking like a stroke out and back.
+    func medianTip() -> (time: Double, point: Point2)? {
+        let n = recentTips.count
+        guard n >= 3 else { return nil }
+        let last3 = recentTips[(n - 3)...]
+        func median(_ values: [Double]) -> Double { values.sorted()[1] }
+        return (recentTips[n - 2].time, Point2(median(last3.map(\.point.x)), median(last3.map(\.point.y))))
+    }
+
+    // MARK: Cursor
+
+    /// Moves the cursor with the hand, or holds it frozen while the hand moves fast.
+    private func updateCursor(_ hand: HandFrame, at time: Double, suppressed: Bool) -> StepOutput {
+        // The tracked point, with the offset left by a freeze draining as the hand really moves
+        // (not with resting jitter, which adds up to a lot of path).
         let rawBox = mapper.boxPoint(fromCamera: trackedPoint(hand))
-        if let previous = lastRawBox, warpOffset != .zero, state != .dragging {
+        if let previous = lastRawBox, warpOffset != .zero, state != .dragging, tipSpeed > config.shake.resumeSpeed {
             let drain = min((rawBox - previous).length / Self.warpDrainBox, 1)
             warpOffset = warpOffset * (1 - drain)
             if warpOffset.length < 1e-5 { warpOffset = .zero }
         }
         lastRawBox = rawBox
-        if let lock = cursorLock {
-            out.append(updateLockedCursor(lock, hand: hand, isFist: isFist, other: other, at: time,
-                                          suppressed: suppressed))
-            if cursorLock != nil { return out }
+
+        if freeze == nil && tipSpeed >= config.shake.freezeSpeed, let current = lastEmittedCursor ?? cursor {
+            // Freeze where the cursor was before the burst began (the smoothed speed lags a
+            // couple of frames behind the hand, and the cursor followed it meanwhile).
+            let calm = lastCalmCursor.flatMap { time - $0.time <= Self.calmLookback ? $0.point : nil }
+            freezeCursor(at: calm ?? current)
         }
+        if var frozen = freeze {
+            if tipSpeed < config.shake.resumeSpeed {
+                if frozen.calmSince == nil { frozen.calmSince = time }
+            } else {
+                frozen.calmSince = nil
+            }
+            if let calmSince = frozen.calmSince, time - calmSince >= config.shake.resumeTime {
+                // Calm again: carry on from the frozen point with the hand where it is now.
+                freeze = nil
+                reanchor(at: frozen.point, time: time)
+            } else {
+                freeze = frozen
+                cursor = frozen.point
+                return emitMove(frozen.point, suppressed: suppressed)
+            }
+        }
+
+        if latestTipSpeed >= config.shake.freezeSpeed, let shown = lastEmittedCursor ?? cursor {
+            // This frame alone looks fast: hold the cursor for it. If the next frame confirms the
+            // burst, the cursor freezes having never moved; if it was a glitch, it carries on.
+            cursor = shown
+            return StepOutput()
+        }
+
         var box = rawBox + warpOffset
         lastBox = box
+        var out = StepOutput()
         if let jumped = router.update(box: box, at: time) {
             rebuildMapper()
             warpOffset = .zero
@@ -116,116 +195,48 @@ extension PointerStateMachine {
         guard let display = router.current else { return out }
         let screen = ActiveBoxMapper.screenPoint(fromBox: smoother.process(box, at: time), on: display)
         cursor = screen
-
+        let before = lastEmittedCursor ?? screen
         out.append(emitMove(screen, suppressed: suppressed))
-        if [.hover, .dragging].contains(state) && !suppressed {
-            updateLockArming(screen, hand: hand, at: time)
-        }
+        let shown = lastEmittedCursor ?? screen
+        cursorHistory.append((time, shown))
+        cursorHistory.removeAll { time - $0.time > Self.historyLength }
+        // Where the cursor was *before* this frame: the speed estimate trails the hand by a frame
+        // or so, so this frame's move may already belong to the burst.
+        if tipSpeed < config.shake.freezeSpeed * Self.calmFraction { lastCalmCursor = (time, before) }
         return out
     }
 
-    // MARK: Lock
-
-    /// Holding the cursor within `dwellRadiusBox` for `lockTime` locks it.
-    private func updateLockArming(_ screen: Point2, hand: HandFrame, at time: Double) {
-        let radius = (router.current?.frame.width ?? 1500) * config.shake.dwellRadiusBox
-        guard let anchor = dwellAnchor, anchor.point.distance(to: screen) <= radius else {
-            dwellAnchor = (time, screen)
-            return
-        }
-        if time - anchor.time >= config.shake.lockTime {
-            // Lock where the pointer visibly is, so a click or press lands exactly there.
-            lockCursor(at: lastEmittedCursor ?? screen, hand: hand, at: time)
-        }
-    }
-
-    func lockCursor(at point: Point2, hand: HandFrame, at time: Double) {
-        cursorLock = CursorLock(point: point, rest: hand.handSpace(trackedPoint(hand)), since: time)
+    /// The cursor stays at `point` until the hand calms down.
+    func freezeCursor(at point: Point2) {
+        if freeze == nil { freeze = CursorFreeze(point: point) } else { freeze?.point = point }
+        freeze?.calmSince = nil
         cursor = point
-        dwellAnchor = nil
-        shakeDetector.reset()
     }
 
-    /// Keep (or put) the cursor locked where it is and wait for the hand to settle before the
-    /// next movement counts: used while the hands do something else (palms, fists).
-    private func holdCursorLocked(_ hand: HandFrame, at time: Double) {
-        if cursorLock == nil, let point = lastEmittedCursor ?? cursor {
-            lockCursor(at: point, hand: hand, at: time)
-        }
-        cursorLock?.settling = true
-        cursorLock?.wakeStart = nil
-        shakeDetector.reset()
+    /// Where the cursor was shown at `time` (the latest point at or before it), or now.
+    func cursorPoint(at time: Double) -> Point2 {
+        cursorHistory.last { $0.time <= time }?.point ?? cursorHistory.first?.point
+            ?? lastEmittedCursor ?? cursor ?? .zero
     }
 
-    /// The cursor stays put. Moving the hand opens the wake window; in it (or before it) a wiggle
-    /// clicks and a fist presses. A real move without either unlocks when the window ends.
-    private func updateLockedCursor(_ lock: CursorLock, hand: HandFrame, isFist: Bool, other: HandFrame?,
-                                    at time: Double, suppressed: Bool) -> StepOutput {
-        var lock = lock
-        var out = StepOutput()
-        cursor = lock.point
+    /// Hands seen with less confidence than this don't move the cursor or count toward a wiggle.
+    static let minMotionConfidence = 0.5
+    /// How long the cursor's recent positions are kept (a wiggle is at most `shake.window` long).
+    static let historyLength = 1.5
+    /// The cursor counts as "before the burst" while the hand is slower than this fraction of
+    /// the freeze speed…
+    static let calmFraction = 0.5
+    /// …and such a position is used for a freeze up to this long afterwards.
+    static let calmLookback = 0.3
+    /// A fist presses where the cursor was this long before the pose was confirmed (beyond the
+    /// confirmation delay itself): the curling fingertip drags the cursor down meanwhile.
+    static let fistLookback = 0.12
 
-        let tip = hand.handSpace(trackedPoint(hand))
-        let size = max(hand.handSize, 1e-4)
-        if lock.settling {
-            // The tail of a gesture is not "the next movement": wait for the hand to stop.
-            if tipSpeed < config.shake.exitStillSpeed { lock.restFrom(tip) }
-        } else if lock.wakeStart == nil && tip.distance(to: lock.rest) / size >= config.shake.wakeDistance {
-            lock.wakeStart = time
-        }
-        let inWindow = lock.wakeStart.map { time - $0 <= config.shake.wakeTime } ?? true
-        if !isFist { lock.handOpenSinceLock = true }
-
-        // The fist must be made while locked: one still held from before (a drag the real mouse
-        // interrupted) never presses again.
-        if state == .hover && isFist && lock.handOpenSinceLock && other == nil && inWindow {
-            // Press where the cursor is locked; the fist drags from here.
-            state = .dragging
-            if !suppressed {
-                out.intents.append(.down(x: lock.point.x, y: lock.point.y))
-                out.events.append(.dragStarted)
-                buttonDown = true
-                lastEmittedCursor = lock.point
-            }
-            // The cursor now follows the palm, offset so that it starts at the pressed point; start
-            // the lock afresh from it.
-            lastRawBox = mapper.boxPoint(fromCamera: hand.palmCenter)
-            reanchor(at: lock.point, time: time)
-            lock.restFrom(hand.handSpace(trackedPoint(hand)))
-            lock.settling = true
-            lastTip = nil
-            cursorLock = lock
-            shakeDetector.reset()
-            return out
-        }
-
-        // Wiggles click only with the button up (mid-drag they are just motion).
-        let wiggle = state == .hover
-            ? shakeDetector.update(point: tip, handSize: hand.handSize, at: time)
-            : nil
-        if wiggle != nil && (inWindow || lock.settling) {
-            if !suppressed { out.append(wiggleClick(at: lock.point, time: time)) }
-            // Still locked: once the hand stops, the next movement opens a new window (and a
-            // wiggle that just keeps going clicks again: a double click).
-            lock.settling = true
-            lock.wakeStart = nil
-        } else if let wakeStart = lock.wakeStart, time - wakeStart > config.shake.wakeTime {
-            if tip.distance(to: lock.rest) / size >= config.shake.minStroke {
-                // The hand went somewhere: the cursor follows.
-                unlockCursor(lock, at: time)
-                return out
-            }
-            // Only a fidget, or a wiggle that didn't finish: stay locked.
-            lock.restFrom(tip)
-            shakeDetector.reset()
-        }
-        cursorLock = lock
-        return out
-    }
+    // MARK: Click
 
     private func wiggleClick(at point: Point2, time: Double) -> StepOutput {
         var count = 1
-        let radius = (router.current?.frame.width ?? 1500) * config.shake.dwellRadiusBox
+        let radius = (router.current?.frame.width ?? 1500) * config.shake.doubleClickRadiusBox
         if let last = lastClick, time - last.time <= config.shake.doubleClickWindow,
            last.point.distance(to: point) <= radius {
             count = min(last.count + 1, 3)
@@ -234,118 +245,59 @@ extension PointerStateMachine {
         return StepOutput(intents: [.click(x: point.x, y: point.y, count: count)], events: [.clicked(count: count)])
     }
 
-    /// Leave the lock: the cursor goes to where the hand points now, so a move made during the
-    /// wake window isn't lost. Mid-drag that is the palm plus the offset fixed when the fist
-    /// pressed; hovering it is the fingertip itself.
-    func unlockCursor(_ lock: CursorLock, at time: Double) {
-        cursorLock = nil
-        if state != .dragging { warpOffset = .zero }
-        cursor = lock.point
-        dwellAnchor = nil
-        shakeDetector.reset()
-    }
-
     // MARK: Drag
 
-    /// The fist opened: release where the cursor is and keep it locked there, so opening the
-    /// hand (which swings the fingertip back out) doesn't move it.
-    private func drop(_ hand: HandFrame, at time: Double) -> StepOutput {
-        let point = cursorLock?.point ?? lastEmittedCursor ?? cursor ?? .zero
+    /// The hand closed into a fist: press where the cursor was before it closed.
+    private func press(_ hand: HandFrame, at point: Point2, time: Double, suppressed: Bool) -> StepOutput {
+        var out = StepOutput()
+        pendingFist = nil
+        state = .dragging
+        shakeDetector.reset()
+        if !suppressed {
+            out.intents.append(.down(x: point.x, y: point.y))
+            out.events.append(.dragStarted)
+            buttonDown = true
+            lastEmittedCursor = point
+        }
+        // The cursor now follows the palm, offset so that it starts at the pressed point. It
+        // stays there until the hand has settled from closing.
+        lastRawBox = mapper.boxPoint(fromCamera: hand.palmCenter)
+        reanchor(at: point, time: time)
+        recentTips.removeAll()
+        tipSpeed = 0
+        latestTipSpeed = 0
+        freezeCursor(at: point)
+        cursorHistory.removeAll()
+        lastCalmCursor = nil
+        return out
+    }
+
+    /// The fist opened: release where the cursor is and hold it there until the hand settles,
+    /// so opening the hand (which swings the fingertip back out) doesn't move it.
+    private func drop(at time: Double) -> StepOutput {
+        let point = freeze?.point ?? lastEmittedCursor ?? cursor ?? .zero
         var out = StepOutput()
         if buttonDown {
             buttonDown = false
             out = StepOutput(intents: [.up(x: point.x, y: point.y)], events: [.dragEnded])
         }
         state = .hover
-        lastTip = nil
-        lockCursor(at: point, hand: hand, at: time)
-        cursorLock?.settling = true
+        recentTips.removeAll()
+        tipSpeed = 0
+        latestTipSpeed = 0
+        warpOffset = .zero
+        freezeCursor(at: point)
+        cursorHistory.removeAll()
+        lastCalmCursor = nil
+        shakeDetector.reset()
         return out
     }
-
-    // MARK: Two fists
-
-    private func updateTwoFists(_ hand: HandFrame, other: HandFrame?, at time: Double, suppressed: Bool) -> StepOutput {
-        let bothFists = other != nil && primary.state.pose == .fist && secondary.state.pose == .fist
-        if bothFists, let other {
-            twoFistsGoneSince = nil
-            let midCamera = (hand.palmCenter + other.palmCenter) * 0.5
-            let mid = mapper.boxPoint(fromCamera: midCamera)
-            let handSize = (hand.handSize + other.handSize) / 2
-            let spread = hand.handSpace(hand.palmCenter).distance(to: hand.handSpace(other.palmCenter)) / max(handSize, 1e-4)
-            // Box space covered by one hand size here (the mapping isn't uniform).
-            let boxPerHand = mapper.boxPoint(fromCamera: midCamera + Point2(handSize, 0)).distance(to: mid)
-            guard state == .twoFists, var gesture = twoFists else {
-                state = .twoFists
-                twoFists = TwoFistGesture(params: config.shake, mid: mid, spread: spread, at: time)
-                holdCursorLocked(hand, at: time)
-                return StepOutput(intents: momentum.stop())
-            }
-            gesture.params = config.shake
-            let result = gesture.update(mid: mid, spread: spread, boxPerHand: boxPerHand, at: time)
-            twoFists = gesture
-            guard let result, !suppressed else { return StepOutput() }
-            return twoFistOutput(result, at: time)
-        }
-        guard state == .twoFists else { return StepOutput() }
-        // A fist opened or a hand dropped out: give Vision a moment before ending.
-        if twoFistsGoneSince == nil { twoFistsGoneSince = time }
-        if time - (twoFistsGoneSince ?? time) >= config.shake.fistGoneTime {
-            endTwoFists()
-            holdCursorLocked(hand, at: time)
-        }
-        return StepOutput()
-    }
-
-    func endTwoFists() {
-        if state == .twoFists { state = .hover }
-        twoFists = nil
-        twoFistsGoneSince = nil
-    }
-
-    private func twoFistOutput(_ result: TwoFistGesture.Result, at time: Double) -> StepOutput {
-        switch result {
-        case let .zoom(factor):
-            return StepOutput(intents: [.zoom(factor: 1, phase: .began), .zoom(factor: factor, phase: .changed),
-                                        .zoom(factor: 1, phase: .ended)],
-                              events: [.zoomStarted, .zoomEnded])
-        case let .scroll(dx, dy):
-            // Content follows the fists with natural scrolling. A small step now, the rest as a
-            // glide, so a whole stroke's scroll doesn't land as one jump.
-            let direction = config.naturalScrolling ? 1.0 : -1.0
-            let total = Point2(dx, dy) * (config.scrollPointsPerBox * config.scrollSpeed * direction)
-            let now = total * Self.twoFistScrollImmediate
-            var intents: [Intent] = momentum.stop()
-            intents += [.scroll(dx: 0, dy: 0, phase: .began), .scroll(dx: now.x, dy: now.y, phase: .changed),
-                        .scroll(dx: 0, dy: 0, phase: .ended)]
-            // A glide at v0 under friction k covers v0 / k in total.
-            let friction = config.momentumFriction
-            intents.append(momentum.start(velocity: (total - now) * friction, at: time))
-            return StepOutput(intents: intents, events: [.scrollStarted, .scrollEnded])
-        }
-    }
-
-    static let twoFistScrollImmediate = 0.15
 }
 
-/// Hold & wiggle's locked cursor.
-struct CursorLock {
+/// The cursor held still while the hand moves fast.
+struct CursorFreeze {
     /// Where the cursor is held (screen points).
     var point: Point2
-    /// The tracked point (hand space) the hand rests from; moving `wakeDistance` from it wakes.
-    var rest: Point2
-    var since: Double
-    /// When the hand started moving again, if it has: the wake window's start.
-    var wakeStart: Double?
-    /// Just finished a gesture: waiting for the hand to stop before watching for the next movement.
-    var settling = false
-    /// The hand has been seen not making a fist since the lock began, so a fist now is new.
-    var handOpenSinceLock = false
-
-    /// Wait for the next movement from here.
-    mutating func restFrom(_ tip: Point2) {
-        rest = tip
-        wakeStart = nil
-        settling = false
-    }
+    /// Since when the hand has been calm (below `resumeSpeed`), if it is.
+    var calmSince: Double?
 }

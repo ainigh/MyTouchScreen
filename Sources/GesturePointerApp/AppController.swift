@@ -469,7 +469,7 @@ final class AppController: MenuBarActions {
         return launchAtLogin.isEnabled
     }
     var hotkeyDisplay: String { settings.hotkey.displayString }
-    var engagedHint: String { "point; rest, then wiggle to click or fist to drag; two fists zoom/scroll" }
+    var engagedHint: String { "point; wiggle to click; fist to drag; fast moves don't move the cursor" }
     var versionLine: String { updater.versionLine }
     var updateState: Updater.State { updater.state }
 

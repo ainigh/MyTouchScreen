@@ -113,6 +113,14 @@ Resume from the first unchecked item. Tick only after verification per `CLAUDE.m
 - [x] README + DECISIONS; script syntax checked; Mac code reviewed, not compiled (CI compiles it)
 - [x] Committed
 
+## Wiggle any time, fast motion freezes the cursor (owner request)
+- [x] Cursor freezes while the hand moves as fast as a wiggle and carries on from there once calm; no rest-to-lock or wake window
+- [x] Wiggle clicks any time (frozen point, or where a slow wiggle began); double click kept
+- [x] Fist (held 0.25 s) presses where the cursor was before the hand closed; two-fist zoom/scroll removed
+- [x] Glitch robustness: low-confidence frames skipped, two-window speed, median-of-3 wiggle input, minimum stroke time, pause at a turn restarts the wiggle
+- [x] Tests (81) green on Linux incl. owner recording; full `swift build` and check.sh green; Mac changes (overlay ring, theme, settings, help text) reviewed, not compiled
+- [x] Committed
+
 ## Owner handoff (for the human, after Claude is done)
 1. `xcode-select --install` if not already done.
 2. `make app && make run`.
