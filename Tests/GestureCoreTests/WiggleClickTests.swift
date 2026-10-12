@@ -1,8 +1,8 @@
 import XCTest
 @testable import GestureCore
 
-/// The gestures: slow movement moves the cursor, fast movement (as fast as a wiggle) freezes it,
-/// a wiggle clicks any time, a fist drags (open it to drop), two open palms toggle engagement.
+/// The gestures: the cursor goes where the finger points (a laser pointer, at every speed), a
+/// wiggle clicks where it began, a fist drags (open it to drop), two open palms toggle engagement.
 final class WiggleClickTests: XCTestCase {
     private let config = GestureConfig()
 
@@ -62,12 +62,11 @@ final class WiggleClickTests: XCTestCase {
     }
 
     func testDefaults() {
-        XCTAssertEqual(GestureConfig().shake.freezeSpeed, 2.5)
         XCTAssertEqual(GestureConfig().shake.reversals, 2)
         XCTAssertEqual(GestureConfig().shake.window, 1.0)
     }
 
-    // MARK: Freeze and click
+    // MARK: Pointing and click
 
     /// Move to a target (0.5–1.0 s), then `after(t)`.
     private func moveThen(fps: Double = 60, duration: Double = 5, noise: Double = 0.0008,
@@ -103,13 +102,15 @@ final class WiggleClickTests: XCTestCase {
                     XCTFail("no click")
                     continue
                 }
-                XCTAssertEqual(click.0, arrived.x, accuracy: 3, "clicks where the pointer was (\(fps) fps, \(axis))")
-                XCTAssertEqual(click.1, arrived.y, accuracy: 3)
+                XCTAssertEqual(click.0, arrived.x, accuracy: 8, "clicks where the pointer was (\(fps) fps, \(axis))")
+                XCTAssertEqual(click.1, arrived.y, accuracy: 8)
                 XCTAssertEqual(click.2, 1)
-                XCTAssertLessThan(firstTime(outputs) { !$0.clicks.isEmpty } ?? 9, 2.0 + 0.6, "no waiting")
-                // The wiggle never dragged the pointer around.
-                XCTAssertTrue(Evaluation.merged(outputs, from: 2.0).moves.allSatisfy { $0.distance(to: arrived) < 20 },
-                              "the cursor holds still through the wiggle (\(fps) fps, \(axis))")
+                let clickTime = firstTime(outputs) { !$0.clicks.isEmpty } ?? 9
+                XCTAssertLessThan(clickTime, 2.0 + 0.6, "no waiting")
+                // The cursor then sits on the click point while the hand settles.
+                let afterClick = Evaluation.merged(outputs, from: clickTime + 0.001, to: clickTime + 0.1).moves
+                XCTAssertTrue(afterClick.allSatisfy { $0.distance(to: Point2(click.0, click.1)) < 1 },
+                              "held on the click point (\(fps) fps, \(axis))")
             }
         }
     }
@@ -124,16 +125,31 @@ final class WiggleClickTests: XCTestCase {
         }
     }
 
-    func testFastMovementNeverMovesTheCursor() {
+    /// Where the cursor ends up after the hand comes to rest at `to`, moving there by `path`.
+    private func restingCursor(_ path: @escaping (Double) -> Point2, fps: Double = 60) -> Point2? {
+        Evaluation.merged(run(moveThen(fps: fps, duration: 5, path))).moves.last
+    }
+
+    func testFastMoveGoesAllTheWayLikeALaserPointer() {
         for fps in [30.0, 60.0] {
-            // Arrive, then a quick 0.1-image-width sweep (≈ a wiggle's speed), then rest.
-            let frames = moveThen(fps: fps) { self.move($0, start: 1.5, to: Point2(0.1, 0.04), duration: 0.25) }
-            let outputs = run(frames)
-            guard let arrived = Evaluation.merged(outputs, to: 1.5).moves.last,
-                  let end = Evaluation.merged(outputs).moves.last else { return XCTFail("no moves") }
-            XCTAssertLessThan(end.distance(to: arrived), 40, "a fast move leaves the cursor in place (\(fps) fps)")
-            XCTAssertEqual(Evaluation.merged(outputs).clicks.count, 0)
+            // A quick 0.25 s sweep and a calm 1.5 s move to the same spot end in the same place.
+            let fast = restingCursor({ self.move($0, start: 1.5, to: Point2(0.1, 0.04), duration: 0.25) }, fps: fps)
+            let slow = restingCursor({ self.move($0, start: 1.5, to: Point2(0.1, 0.04), duration: 1.5) }, fps: fps)
+            guard let fast, let slow else { return XCTFail("no moves") }
+            XCTAssertLessThan(fast.distance(to: slow), 6, "fast and slow moves land on the same spot (\(fps) fps)")
         }
+    }
+
+    func testCursorAlwaysEndsWhereTheHandPoints() {
+        // Fast sweep right, then a slow move left: the cursor ends where a direct move would put
+        // it. Nothing (no freeze, no gain) builds up an offset between hand and cursor.
+        let detour = restingCursor { t in
+            self.move(t, start: 1.5, to: Point2(0.1, 0), duration: 0.25)
+                + self.move(t, start: 2.5, to: Point2(-0.05, 0), duration: 1.5)
+        }
+        let direct = restingCursor { self.move($0, start: 1.5, to: Point2(0.05, 0), duration: 0.8) }
+        guard let detour, let direct else { return XCTFail("no moves") }
+        XCTAssertLessThan(detour.distance(to: direct), 6)
     }
 
     func testSlowMovementMovesTheCursor() {
@@ -144,17 +160,14 @@ final class WiggleClickTests: XCTestCase {
         XCTAssertGreaterThan(end.x - arrived.x, 200, "a calm move moves the cursor")
     }
 
-    func testAfterAFastMoveTheCursorCarriesOnFromWhereItStopped() {
-        // Fast sweep right (ignored), then a slow move left: the cursor goes left from where it
-        // stayed, rather than jumping to where the hand now points.
-        let frames = moveThen(duration: 6) { t in
-            self.move(t, start: 1.5, to: Point2(0.1, 0), duration: 0.25)
-                + self.move(t, start: 2.5, to: Point2(-0.05, 0), duration: 1.5)
-        }
-        let outputs = run(frames)
-        guard let arrived = Evaluation.merged(outputs, to: 1.5).moves.last,
-              let end = Evaluation.merged(outputs).moves.last else { return XCTFail("no moves") }
-        XCTAssertLessThan(end.x, arrived.x - 50, "moved left from the frozen point")
+    func testSmallMovesAreNotSwallowed() {
+        // A 10 pt-ish nudge from a resting cursor moves it by about that much (no gain < 1, no
+        // stick-slip): "it doesn't move enough" was the owner's complaint.
+        let still = restingCursor { _ in .zero }
+        let nudged = restingCursor { self.move($0, start: 2.0, to: Point2(0.004, 0), duration: 0.4) }
+        guard let still, let nudged else { return XCTFail("no moves") }
+        // 0.004 image widths through the default box: 0.004 / 0.42 × 1.08 × 1727 ≈ 17.8 pt.
+        XCTAssertEqual(nudged.x - still.x, 17.8, accuracy: 5)
     }
 
     func testSlowWiggleWhileMovingClicksWhereItBegan() {
@@ -281,12 +294,15 @@ final class WiggleClickTests: XCTestCase {
         XCTAssertEqual(out.downs, 1)
     }
 
-    func testOtherHandAloneNeverPoints() {
-        let otherOnly = stream(duration: 3, other: { _ in Other(pose: .point) }) { _ in .zero }.map {
-            TrackingFrame(timestamp: $0.timestamp, hands: Array($0.hands.dropFirst()))
+    func testLoneHandPointsWhateverVisionCallsIt() {
+        // Vision's chirality flips now and then; a lone hand labelled "left" used to be ignored,
+        // which stopped the cursor for no visible reason.
+        let mislabelled = stream(duration: 3) { self.move($0, start: 0.5, to: Point2(0.08, 0.05)) }.map { frame in
+            TrackingFrame(timestamp: frame.timestamp, hands: frame.hands.map { var h = $0; h.chirality = .left; return h })
         }
-        let out = Evaluation.merged(run(otherOnly))
-        XCTAssertEqual(out.moves.count + out.clicks.count, 0, "the other hand alone never points")
+        let out = Evaluation.merged(run(mislabelled))
+        XCTAssertGreaterThan(out.moves.count, 10)
+        XCTAssertEqual(out.clicks.count + out.downs, 0)
     }
 
     private let small = DisplayInfo(id: "S", frame: Rect(x: 0, y: 0, width: 1440, height: 900))

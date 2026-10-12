@@ -24,7 +24,13 @@ final class AppSettings: ObservableObject {
         static let enabled = "enabled"
         static let previewCorner = "previewCorner"
         static let scrollFollowsSystem = "scrollFollowsSystem"
+        static let pointerTuning = "pointerTuningVersion"
     }
+
+    /// Bumped when the pointer's smoothing changes meaning. Saved smoothing from an older version
+    /// is reset to the new defaults once: v2 is the laser-pointer model, where the old sliders'
+    /// values (often moved while hunting for a fix) would make it laggy or jittery.
+    static let pointerTuningVersion = 2
 
     private let defaults: UserDefaults
     /// Called after any change has been saved.
@@ -64,6 +70,12 @@ final class AppSettings: ObservableObject {
         enabled = defaults.object(forKey: Keys.enabled) as? Bool ?? true
         previewCorner = defaults.object(forKey: Keys.previewCorner) as? Int ?? 3
         scrollFollowsSystem = defaults.object(forKey: Keys.scrollFollowsSystem) as? Bool ?? true
+        if defaults.integer(forKey: Keys.pointerTuning) < Self.pointerTuningVersion {
+            // Property observers don't run in init, so save explicitly.
+            config.resetPointerTuning()
+            saveJSON(config, Keys.config)
+            defaults.set(Self.pointerTuningVersion, forKey: Keys.pointerTuning)
+        }
     }
 
     /// The system's natural-scrolling choice (the global `com.apple.swipescrolldirection`
@@ -176,38 +188,37 @@ struct SettingsView: View {
     var body: some View {
         TabView {
             PointerSettings(settings: settings)
-                .tabItem { Label("Pointer", systemImage: "cursorarrow.motionlines") }
-            GestureSettings(settings: settings)
-                .tabItem { Label("Gestures", systemImage: "hand.wave") }
+                .tabItem { Label("Pointer", systemImage: "cursorarrow.rays") }
             CameraSettings(settings: settings, cameras: cameras, onCalibrate: onCalibrate)
                 .tabItem { Label("Camera", systemImage: "camera") }
             GeneralSettings(settings: settings, launchAtLogin: launchAtLogin,
                             onLaunchAtLoginChange: onLaunchAtLoginChange)
                 .tabItem { Label("General", systemImage: "gearshape") }
         }
-        .frame(width: 540, height: 540)
+        .frame(width: 520, height: 500)
     }
 }
 
-/// A labelled slider with its value shown in SF Mono.
+/// A slider described by what its two ends do, not by a number.
 @MainActor
-private struct ValueSlider: View {
+private struct EndsSlider: View {
     let title: String
     @Binding var value: Double
     let range: ClosedRange<Double>
-    var format = "%.2f"
+    let low: String
+    let high: String
     var help = ""
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack {
-                Text(title)
-                Spacer()
-                Text(String(format: format, value))
-                    .font(.system(size: 12, design: .monospaced))
-                    .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+            Slider(value: $value, in: range) {
+                EmptyView()
+            } minimumValueLabel: {
+                Text(low).font(.caption).foregroundStyle(.secondary)
+            } maximumValueLabel: {
+                Text(high).font(.caption).foregroundStyle(.secondary)
             }
-            Slider(value: $value, in: range)
             if !help.isEmpty {
                 Text(help).font(.caption).foregroundStyle(.secondary)
             }
@@ -219,85 +230,35 @@ private struct ValueSlider: View {
 private struct PointerSettings: View {
     @ObservedObject var settings: AppSettings
 
-    var body: some View {
-        Form {
-            Section("Displays") {
-                Toggle("Stay on the display the mouse is on when Wisp engages", isOn: $settings.config.stayOnEngagedDisplay)
-                Text("Off: hold the cursor against an edge to move to the next display, and the real mouse moves Wisp to its display.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            Section("Reach") {
-                ValueSlider(title: "Active area", value: $settings.config.boxScale, range: 0.5...1.5,
-                            format: "%.2f×",
-                            help: "Smaller = less hand movement covers the screen. Larger = more precise.")
-            }
-            Section("Smoothing (1€ filter)") {
-                ValueSlider(title: "Steadiness (min cutoff)", value: $settings.config.filter.minCutoff,
-                            range: 0.1...3.0, format: "%.2f Hz",
-                            help: "Lower = steadier when still, slightly slower to start moving.")
-                ValueSlider(title: "Responsiveness (beta)", value: $settings.config.filter.beta,
-                            range: 0...20, format: "%.1f",
-                            help: "Higher = less lag on fast moves, a little more jitter.")
-                ValueSlider(title: "Rest lock", value: $settings.config.restDeadZoneBox,
-                            range: 0...0.012, format: "%.4f",
-                            help: "How firmly a still cursor is held in place.")
-            }
-            Section("Precision") {
-                Toggle("Slow down slow movements", isOn: $settings.config.precisionEnabled)
-                ValueSlider(title: "Precision slow-gain", value: $settings.config.precisionGain,
-                            range: 0.2...1.0, format: "%.2f×",
-                            help: "Below a slow speed the cursor moves at this fraction of your hand's speed.")
-                    .disabled(!settings.config.precisionEnabled)
-            }
-        }
-        .formStyle(.grouped)
-    }
-}
-
-@MainActor
-private struct GestureSettings: View {
-    @ObservedObject var settings: AppSettings
-
-    private let help = "Point with your right hand: the cursor follows your index finger while you move calmly. Moving fast (as fast as a wiggle) never moves it — it holds still until your hand calms down, then carries on from there. Wiggle (left-right-left) to click where the cursor is, any time; wiggle again soon after for a double click. Make a fist and hold it a moment to press and drag; open it to drop. Both open palms turn Wisp on and off. Nothing else clicks."
+    private let howItWorks = "Wisp is an invisible laser pointer: the cursor goes wherever your index finger points, at any speed, and holds still while your hand does. Wiggle your finger (left-right-left) to click there; wiggle twice for a double click. Make a fist and hold it a moment to grab and drag; open your hand to drop. Both open palms turn Wisp on and off."
 
     var body: some View {
         Form {
             Section("How it works") {
-                Text(help)
-                    .font(.caption).foregroundStyle(.secondary)
+                Text(howItWorks).font(.caption).foregroundStyle(.secondary)
             }
-            Section("Fast movement") {
-                ValueSlider(title: "Freeze the cursor above", value: $settings.config.shake.freezeSpeed,
-                            range: 1.5...6.0, format: "%.1f hands/s",
-                            help: "Hand speed (hand lengths per second) at which the cursor stops following. Lower it if wiggles nudge the cursor; raise it if quick pointing freezes it.")
-                ValueSlider(title: "Follow again below", value: $settings.config.shake.resumeSpeed,
-                            range: 0.5...2.0, format: "%.1f hands/s")
-                ValueSlider(title: "…after calm for", value: $settings.config.shake.resumeTime,
-                            range: 0.05...0.5, format: "%.2f s")
-            }
-            Section("Click and drag") {
-                Stepper("Click wiggle: \(settings.config.shake.reversals) changes of direction",
-                        value: $settings.config.shake.reversals, in: 1...5)
-                ValueSlider(title: "Click wiggle: within", value: $settings.config.shake.window,
-                            range: 0.5...2.0, format: "%.2f s")
-                ValueSlider(title: "Click wiggle: smallest stroke", value: $settings.config.shake.minStroke,
-                            range: 0.1...1.0, format: "%.2f × hand",
-                            help: "Shorter back-and-forth movements are ignored, so a shaky hand never clicks.")
-                ValueSlider(title: "Double click: second wiggle within", value: $settings.config.shake.doubleClickWindow,
-                            range: 0.5...3.0, format: "%.1f s")
-                ValueSlider(title: "Fist: hold before it presses", value: $settings.config.shake.fistHoldTime,
-                            range: 0.1...1.0, format: "%.2f s",
-                            help: "A fist that only flickers for a moment while you move never starts a drag.")
-                Button("Reset gestures to defaults") { settings.config.shake = ShakeParams() }
-            }
-            Section("Engage") {
-                Toggle("Both open palms toggle Wisp on and off", isOn: $settings.config.palmEngageEnabled)
-                Text("Hold up both hands, palms open, for about half a second. While off, Wisp keeps the camera at a few frames per second to watch for your palms. Turn this off to stop the camera completely and use the hotkey instead.")
-                    .font(.caption).foregroundStyle(.secondary)
+            Section("Feel") {
+                EndsSlider(title: "Steadiness", value: $settings.config.steadiness, range: 0...1,
+                           low: "Snappy", high: "Steady",
+                           help: "Toward Steady if the cursor shivers while your hand is still; toward Snappy if it trails behind your finger.")
+                EndsSlider(title: "Hand movement to cover the screen", value: $settings.config.boxScale,
+                           range: 0.5...1.5, low: "Less", high: "More",
+                           help: "Less: small movements cross the whole screen. More: bigger movements, finer aim. Calibrating (Camera tab) sets the area by pointing at the corners.")
                 Picker("Pointing hand", selection: $settings.config.preferredHand) {
-                    Text("Automatic").tag(Chirality.unknown)
+                    Text("Automatic (right)").tag(Chirality.unknown)
                     Text("Right").tag(Chirality.right)
                     Text("Left").tag(Chirality.left)
+                }
+                Button("Reset to Defaults") {
+                    settings.config.resetPointerTuning()
+                    settings.config.boxScale = GestureConfig().boxScale
+                }
+            }
+            if NSScreen.screens.count > 1 {
+                Section("Displays") {
+                    Toggle("Stay on the display the mouse is on when Wisp turns on", isOn: $settings.config.stayOnEngagedDisplay)
+                    Text("Off: hold the cursor against an edge to move to the next display.")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
             }
         }
@@ -354,13 +315,16 @@ private struct GeneralSettings: View {
 
     var body: some View {
         Form {
-            Section("Shortcut") {
+            Section("Turning Wisp on and off") {
                 HStack {
-                    Text("Engage / disengage")
+                    Text("Shortcut")
                     Spacer()
                     Button(recording ? "Press keys…" : settings.hotkey.displayString) { toggleRecording() }
                         .font(.system(size: 13, design: .monospaced))
                 }
+                Toggle("Both open palms turn Wisp on and off", isOn: $settings.config.palmEngageEnabled)
+                Text("Wisp stays on until you turn it off, even while your hand is out of view. With the palms off the camera stops completely while Wisp is off.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
             Section("Feedback") {
                 Toggle("Sounds", isOn: $settings.soundsEnabled)

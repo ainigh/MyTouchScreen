@@ -44,5 +44,5 @@ public enum PointerEvent: Equatable {
 }
 
 public enum DisengageReason: String, Equatable, Codable {
-    case palm, hotkey, handLost, menu
+    case palm, hotkey, menu
 }

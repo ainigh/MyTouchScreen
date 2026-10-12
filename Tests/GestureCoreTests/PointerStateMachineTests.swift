@@ -45,14 +45,25 @@ final class PointerStateMachineTests: XCTestCase {
         XCTAssertTrue(out.events.contains(.disengaged(.palm)))
     }
 
-    func testHandLostDisengagesAfterTimeout() {
+    func testLosingTheHandNeverDisengages() {
+        // Owner report: "sometimes it just stops and I manually engage". A hand out of view
+        // (however long) only marks the hand away; only palms, hotkey or menu disengage.
         let machine = engagedMachine()
-        drive(machine, SyntheticStream.handLost(visibleUntil: 0.5, duration: 2.3))
-        XCTAssertTrue(machine.isEngaged, "1.8 s without a hand is still within the 2 s timeout")
-        let longer = engagedMachine()
-        let out = drive(longer, SyntheticStream.handLost(visibleUntil: 0.5, duration: 3.0))
-        XCTAssertFalse(longer.isEngaged)
-        XCTAssertTrue(out.events.contains(.disengaged(.handLost)))
+        drive(machine, SyntheticStream.handLost(visibleUntil: 0.5, duration: 1.5))
+        XCTAssertTrue(machine.isEngaged)
+        XCTAssertFalse(machine.snapshot.handAway)
+        let out = drive(machine, SyntheticStream.handLost(visibleUntil: 0.5, duration: 60).map {
+            TrackingFrame(timestamp: $0.timestamp + 2, hands: $0.hands)
+        })
+        XCTAssertTrue(machine.isEngaged)
+        XCTAssertTrue(machine.snapshot.handAway)
+        XCTAssertFalse(out.events.contains { if case .disengaged = $0 { return true } else { return false } })
+        // The hand comes back: it points straight away.
+        let back = drive(machine, SyntheticStream.steady(tip: Point2(0.4, 0.4), duration: 0.5).map {
+            TrackingFrame(timestamp: $0.timestamp + 63, hands: $0.hands)
+        })
+        XCTAssertFalse(back.moves.isEmpty)
+        XCTAssertFalse(machine.snapshot.handAway)
     }
 
     /// The fist drag scenario up to `until` (pressed at 2 s, moving from 2.5 s).
