@@ -100,7 +100,7 @@ while let argument = iterator.next() {
     case "--display":
         guard let value = iterator.next() else { fail("--display needs WxH") }
         let parts = value.split(separator: "x").compactMap { Double($0) }
-        guard parts.count == 2 else { fail("--display needs WxH, e.g. 1728x1117") }
+        guard parts.count == 2, parts.allSatisfy({ $0 >= 1 }) else { fail("--display needs WxH, e.g. 1728x1117") }
         display = DisplayInfo(id: "main", frame: Rect(x: 0, y: 0, width: parts[0], height: parts[1]))
     case "--moves":
         showMoves = true

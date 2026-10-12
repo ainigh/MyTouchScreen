@@ -170,6 +170,12 @@ final class Camera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
         if !session.outputs.contains(output), session.canAddOutput(output) {
             session.addOutput(output)
         }
+        // GestureCore expects exactly what the camera sees (mirroring lives in calibration), so
+        // pin the data output's mirroring off rather than trust each camera's default.
+        if let connection = output.connection(with: .video), connection.isVideoMirroringSupported {
+            connection.automaticallyAdjustsVideoMirroring = false
+            connection.isVideoMirrored = false
+        }
         let fps = applyBestFormat(device, resolution: wantedResolution, desiredFPS: 60)
         session.commitConfiguration()
         activeDeviceID = device.uniqueID
@@ -202,7 +208,12 @@ final class Camera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
         do {
             try device.lockForConfiguration()
             device.activeFormat = best
-            if range.maxFrameRate <= desiredFPS {
+            // Only ask for `desiredFPS` if some range of this format actually contains it: an
+            // unsupported frame duration raises an Objective-C exception, which would crash.
+            let desiredSupported = best.videoSupportedFrameRateRanges.contains {
+                $0.minFrameRate <= desiredFPS && desiredFPS <= $0.maxFrameRate
+            }
+            if range.maxFrameRate <= desiredFPS || !desiredSupported {
                 device.activeVideoMinFrameDuration = range.minFrameDuration
                 device.unlockForConfiguration()
                 return range.maxFrameRate

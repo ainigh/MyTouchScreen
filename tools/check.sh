@@ -17,7 +17,9 @@ else
 fi
 
 echo "== GestureCore imports Foundation only"
-imports=$(grep -RhE '^\s*(@testable\s+)?import\s+' Sources/GestureCore | sed -E 's/^\s*(@testable\s+)?import\s+//' | sort -u)
+# POSIX classes, not \s: macOS's BSD sed doesn't know \s, and `make check` runs there too.
+imports=$(grep -RhE '^[[:space:]]*(@testable[[:space:]]+)?import[[:space:]]+' Sources/GestureCore \
+  | sed -E 's/^[[:space:]]*(@testable[[:space:]]+)?import[[:space:]]+//' | sort -u)
 for module in $imports; do
   if [ "$module" != "Foundation" ]; then bad "GestureCore imports $module"; fi
 done
@@ -25,7 +27,7 @@ done
 
 echo "== Mac files are guarded for Linux builds"
 for f in Sources/GesturePointerApp/*.swift; do
-  first=$(grep -vE '^\s*(//.*)?$' "$f" | head -n 1)
+  first=$(grep -vE '^[[:space:]]*(//.*)?$' "$f" | head -n 1)
   case "$first" in
     "#if canImport(AppKit)"*) ;;
     *) bad "$f does not start with #if canImport(AppKit)";;

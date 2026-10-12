@@ -172,4 +172,18 @@ final class DisplayRouterTests: XCTestCase {
         router.focus(containing: Point2(-50, 50)) // off-screen: nearest display
         XCTAssertEqual(router.current?.id, "L")
     }
+
+    func testNonPositiveBoxScaleFallsBackToDefaultScale() {
+        // Regression: scale 0 collapsed the quad, the solve failed and the identity map
+        // (unmirrored) was used; a negative scale flipped the box.
+        let profile = CalibrationProfile.defaultProfile()
+        let reference = ActiveBoxMapper(profile: profile, boxScale: 1)
+        for bad in [0.0, -1.0, .nan, .infinity] {
+            let mapper = ActiveBoxMapper(profile: profile, boxScale: bad)
+            for p in [Point2(0.4, 0.4), Point2(0.6, 0.5)] {
+                XCTAssertEqual(mapper.boxPoint(fromCamera: p).distance(to: reference.boxPoint(fromCamera: p)), 0,
+                               accuracy: 1e-9, "boxScale \(bad)")
+            }
+        }
+    }
 }

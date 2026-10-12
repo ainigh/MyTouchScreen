@@ -65,3 +65,14 @@ One line per judgment call, newest at the bottom. All delegated by the owner.
 - Optional `WISP_SIGN_IDENTITY` / `signIdentity` default: ad-hoc signatures change every build, so macOS forgets Camera/Accessibility grants after an update; a stable self-made code-signing certificate keeps them. Optional because creating a certificate needs the user.
 - The updater disengages Wisp before restarting so no button or modifier can be left held.
 - CI back to running on every push (as in tool-mac-tool) since releases come from pushes to main; when Actions isn't available, installs and updates fall back to building on the Mac.
+- When a different hand takes over as the pointing hand, any drag/scroll/zoom/app-switch the old hand held is cancelled immediately (mouse-up / scroll ended), since the reset detector will never report its end.
+- A drag that began while real-mouse priority suppressed output sends neither down nor up; the mouse-up is only emitted if its mouse-down was sent.
+- Out-of-range imported settings are bounded where they could crash or NaN: app-switcher step floor 0.01 box, momentum friction floor 0.1/s, non-positive box scale treated as 1; replay frames with non-positive image aspect are rejected.
+- Updater verifies the new bundle before swapping it in: same bundle id, `WispCommit` equal to the commit being installed, and `codesign --verify --deep --strict` (catches truncated or tampered bundles; authenticity rests on HTTPS/gh from GitHub). It looks for `GesturePointer.app` (what make-app.sh zips), not the installed copy's possibly renamed bundle name.
+- The camera preview pins its connection's mirroring off; the mirror comes only from the layer transform, so the skeleton overlay always lines up whatever the per-camera default is.
+- check.sh uses POSIX `[[:space:]]` rather than `\s` so `make check` also works with macOS's BSD sed.
+- The camera's data-output connection pins mirroring off too (automatic adjustment disabled), so Vision always sees the unmirrored image GestureCore assumes, whatever the camera.
+- Camera asks for 60 fps only when a frame-rate range of the chosen format contains it; otherwise it takes the format's own maximum, since an unsupported frame duration raises an uncatchable exception.
+- InputSynth permits local mouse/keyboard events in the remote-mouse-drag suppression state as well, so the real mouse keeps working during a pinch-drag.
+- Quit (menu, Ctrl-C or SIGTERM) disengages the state machine, releases held buttons/modifiers and stops InputSynth posting before exit; the hotkey always disengages, even if camera access was revoked.
+- If the real mouse moves during a hand drag, the synthetic button is released at the real mouse position and the rest of that pinch is ignored, so the real mouse never drags what the hand grabbed.

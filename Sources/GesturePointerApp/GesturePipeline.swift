@@ -121,10 +121,16 @@ final class GesturePipeline {
         }
     }
 
-    /// Release held buttons/modifiers and close the recording. Blocks until done (quit path).
+    /// Disengage, release held buttons/modifiers and close the recording. Blocks until done
+    /// (quit path). Frames still in flight from the camera can no longer post anything after.
     func shutdown() {
+        let mouse = Displays.mouseLocation()
         queue.sync {
+            let out = self.machine.setEngaged(false, reason: .menu, at: CACurrentMediaTime(),
+                                              mouseLocation: Point2(mouse.x, mouse.y))
+            for intent in out.intents { self.synth.perform(intent) }
             self.synth.releaseAll()
+            self.synth.postsEvents = false
             self.recorder?.close()
             self.recorder = nil
             self.tickTimer?.cancel()
@@ -150,6 +156,10 @@ final class GesturePipeline {
 
     private func perform(_ out: StepOutput) {
         for intent in out.intents { synth.perform(intent) }
+        // Belt and braces: however disengagement happened (palm, hand lost), nothing stays held.
+        if out.events.contains(where: { if case .disengaged = $0 { return true } else { return false } }) {
+            synth.releaseAll()
+        }
         publish(machine.snapshot, out.events)
     }
 

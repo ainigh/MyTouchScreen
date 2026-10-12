@@ -83,8 +83,11 @@ final class CalibrationController {
         case .skipped: view.showMessage("Skipped", detail: "Using the default area. Calibrate any time from the menu.")
         }
         onFinish?(outcome)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
-            MainActor.assumeIsolated { self?.window.orderOut(nil) }
+        // Capture the window, not self: onFinish drops the owner's reference to this controller,
+        // and a weak self here would leave the full-screen dimming window up for good.
+        let window = window
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+            MainActor.assumeIsolated { window.orderOut(nil) }
         }
     }
 

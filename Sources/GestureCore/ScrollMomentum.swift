@@ -11,7 +11,9 @@ public struct ScrollMomentum {
     private var minSpeed: Double
 
     public init(friction: Double, minSpeed: Double) {
-        self.friction = friction
+        // Zero or negative friction (an imported settings file) would divide by zero in `tick`
+        // and glide forever; keep a floor of a very long but finite glide.
+        self.friction = max(friction, 0.1)
         self.minSpeed = minSpeed
     }
 
