@@ -1,11 +1,11 @@
-# Wisp — point at your Mac, rest and wiggle to click
+# Wisp — point at your Mac, wiggle to click
 
 Wisp is a menu-bar app that turns your Mac's camera into a touch-free pointing device.
-Point your right index finger at the screen and a soft halo follows it. Rest for a second and
-the cursor locks in place; then wiggle your finger to click there, or make a fist to grab and
-drag (open it to drop). Two fists zoom and scroll. That wiggle is the only way Wisp clicks, so
-ordinary hand movement never clicks anything by accident. It generates real system input, so
-it works in every app.
+Point your right index finger at the screen and a soft halo follows it. Wiggle your finger to
+click where the cursor is — any time, no waiting — or make a fist to grab and drag (open it to
+drop). Moving your hand fast never moves the cursor, so the wiggle (or closing your hand)
+doesn't drag the pointer off its target. It generates real system input, so it works in every
+app.
 
 Everything runs on the Mac: Apple's Vision framework finds 21 points on your hand, and no
 video is stored or sent anywhere.
@@ -119,29 +119,27 @@ Turn that setting off to stop the camera whenever Wisp is disengaged and use the
 
 ## Gesture cheat sheet
 
-Your **right hand** points. The left hand only joins in for two-hand gestures.
+Your **right hand** points. The other hand only joins in to turn Wisp on and off. Wisp tracks
+two things: your **index finger** and your **fist**.
 
-**The lock.** Hold the cursor still for 1 second and it **locks** (the outer ring fills, then
-stays full). When you move again, the cursor stays locked for **1 more second** (the ring drains)
-— that second is when you click or grab. Do nothing and the cursor unlocks and jumps to where you
-point.
+**Fast means "not pointing".** While your hand moves calmly the cursor follows your fingertip.
+The moment it moves fast — about as fast as a wiggle — the cursor stops where it was just
+before and holds still (the outer ring lights up). Once your hand calms down the cursor carries
+on from there, like lifting a mouse and putting it down. So a quick sweep doesn't move the
+cursor; move calmly to go somewhere.
 
 | Hands | What you do | Action |
 |---|---|---|
-| right | point and move | Cursor follows the fingertip |
-| right | rest 1 s, then **wiggle** (left-right-left) within the next second | Left click where the cursor is locked. It stays locked, so wiggle again for a double click |
-| right | rest 1 s, then make a **fist** within the next second | Press there and drag: the cursor follows the fist (same lock rules — rest, then it waits a second after you move on) |
-| right | **open** the fist | Drop where the cursor is (the locked point if it rested) |
-| both | **fists**, spread apart, rest | Zoom in |
-| both | fists, bring together, rest | Zoom out |
-| both | fists, move both the same way, rest | Scroll that way (content follows the fists) |
+| right | point and move calmly | Cursor follows the fingertip |
+| right | move fast | Cursor holds still |
+| right | **wiggle** (left-right-left, or up-down-up) | Left click where the cursor is. Wiggle again within 1.5 s for a double click |
+| right | make a **fist** and hold it a moment (¼ s) | Press where the cursor was before your hand closed, and drag: the cursor follows the fist |
+| right | **open** the fist | Drop where the cursor is |
 | both | **open palms**, held still | Engage / disengage |
 
-Notes: only the **last stroke before you rest** counts for two fists — close them, widen them,
-rest: zoom in again (a ratchet, like lifting a mouse). Raise-then-lower and rest scrolls down.
-The cursor stays put during two-fist gestures. Engaging never clicks by itself, and resting
-never clicks — **only a wiggle does**: pinches, taps, flicks and hovering never click.
-There's no right click. With two monitors the
+Notes: engaging never clicks by itself, and resting never clicks — **only a wiggle does**:
+pinches, single taps and hovering never click. A fist that flickers for a moment while you
+move doesn't start a drag. There's no right click, scroll or zoom. With two monitors the
 cursor stays on the monitor the mouse pointer was on when Wisp engaged (Settings → Pointer).
 Wiggling the index finger works as well as wiggling the whole hand.
 Left-handed? Settings → Gestures → *Pointing hand: Left* swaps the roles.
@@ -149,10 +147,9 @@ Left-handed? Settings → Gestures → *Pointing hand: Left* swaps the roles.
 ## The overlay
 
 - **Halo** around the cursor, colour-coded: teal = pointing, violet with a centre dot = fist
-  drag, rose with a centre dot = two fists.
-- **Outer ring** fills during the two-palm hold (engage/disengage); while pointing it fills as
-  the cursor settles, stays full while locked and drains through the second after you move —
-  wiggle or make a fist before it empties.
+  drag.
+- **Outer ring** fills during the two-palm hold (engage/disengage); while pointing it shows
+  full whenever the cursor is holding still because your hand is moving fast.
 - **Ripple** where a wiggle clicked (a double ripple for a double click).
 - **Edge glow** while you hold the cursor against an edge to jump displays.
 - **Toasts** at the top of the screen for state changes ("Engaged", "Standing by", "Camera
@@ -170,11 +167,9 @@ Menu bar → *Settings…*
   edge jumps between displays), *Active area* (how much hand movement covers the screen), *Steadiness* and
   *Responsiveness* (the 1€ filter's min cutoff and beta), *Rest lock* (how firmly a still cursor
   holds), *Precision* (slow movements are scaled down for fine targeting).
-- **Gestures:** how long a rest locks the cursor and how long it stays locked after you move,
-  how still is still, the click wiggle (changes of direction, within how long, smallest stroke),
-  the double-click window; for two fists the smallest stroke, rest time and zoom strength;
-  scroll speed and direction (follows the system by default), how zoom is sent (⌘+/⌘− keys, or
-  ⌘+scroll), two-palm engage, which hand points.
+- **Gestures:** how fast is "fast" (the cursor freezes above it) and when it follows again,
+  the click wiggle (changes of direction, within how long, smallest stroke), the double-click
+  window, how long a fist is held before it presses, two-palm engage, which hand points.
 - **Camera:** device (automatic prefers an iPhone), resolution (720p recommended), preview,
   skeleton, calibration.
 - **General:** shortcut, sounds, status dot, launch at login, export/import settings as JSON,

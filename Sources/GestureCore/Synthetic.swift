@@ -239,9 +239,9 @@ public enum SyntheticStream {
         }
     }
 
-    /// Two fists from `start`, then (from `start + 0.4`, over 0.5 s) spreading apart by
-    /// `spreadChange` (> 0 zooms in, < 0 out) and both moving by `shift` (image units: scroll),
-    /// then resting.
+    /// Two hands, fists from `start`, then (from `start + 0.4`, over 0.5 s) spreading apart by
+    /// `spreadChange` and both moving by `shift` (image units), then resting. Two-hand zoom and
+    /// scroll are retired; this checks that two fists do no more than one.
     public static func twoFists(start: Double = 0.5, spreadChange: Double = 0.12, shift: Point2 = .zero,
                                 fps: Double = 30) -> [TrackingFrame] {
         generate(duration: start + 2.5, fps: fps) { t in

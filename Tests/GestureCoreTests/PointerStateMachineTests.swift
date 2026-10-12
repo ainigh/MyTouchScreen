@@ -3,10 +3,9 @@ import XCTest
 
 /// Engagement, safety and plumbing: the gestures themselves are in DwellShakeTests.
 final class PointerStateMachineTests: XCTestCase {
-    private let scrollDown = SyntheticStream.twoFists(spreadChange: 0, shift: Point2(0, 0.12))
-
     func testHoverMovesCursorOnlyWhenEngaged() {
-        let frames = SyntheticStream.ramp(from: Point2(0.6, 0.45), to: Point2(0.4, 0.45), duration: 0.5)
+        // A calm move (a fast one would freeze the cursor).
+        let frames = SyntheticStream.ramp(from: Point2(0.6, 0.45), to: Point2(0.4, 0.45), duration: 2.0)
         let idle = PointerStateMachine(displays: [testDisplay])
         XCTAssertTrue(drive(idle, frames).intents.isEmpty, "a disengaged machine must never move the cursor")
 
@@ -17,56 +16,15 @@ final class PointerStateMachineTests: XCTestCase {
         XCTAssertGreaterThan(moves.last!.x, moves.first!.x + 300)
     }
 
-    func testTwoFistsScrollGlidesAndNeedsTicksOnlyWhileGliding() {
+    func testNoGestureNeedsTicks() {
+        // Nothing glides any more, so the app's tick timer never runs.
         let machine = engagedMachine()
-        XCTAssertFalse(machine.needsTicks, "an engaged hand with no glide needs no tick timer")
-        var sawGlide = false
-        var out = StepOutput()
-        for frame in scrollDown {
-            out.append(machine.process(frame))
-            if machine.needsTicks { sawGlide = true }
+        for frame in SyntheticStream.wiggleClick() + SyntheticStream.twoFists().map({
+            TrackingFrame(timestamp: $0.timestamp + 5, hands: $0.hands)
+        }) {
+            _ = machine.process(frame)
+            XCTAssertFalse(machine.needsTicks)
         }
-        XCTAssertTrue(sawGlide, "a two-fist scroll glides")
-        var t = scrollDown.last?.timestamp ?? 0
-        while machine.needsTicks && t < 60 {
-            t += 1.0 / 120
-            out.append(machine.tick(at: t))
-        }
-        XCTAssertFalse(machine.needsTicks, "ticks stop once the glide comes to rest")
-        XCTAssertEqual(out.scrolls(.momentumBegan).count, 1)
-        XCTAssertEqual(out.scrolls(.momentumEnded).count, 1)
-        let momentum = out.scrolls(.momentumChanged).map { abs($0.1) }
-        XCTAssertTrue(zip(momentum, momentum.dropFirst()).allSatisfy { $0 >= $1 }, "the glide only slows down")
-    }
-
-    func testConfigChangeMidGlideKeepsMomentumEnded() {
-        // Regression: re-applying settings replaced the momentum object, dropping a glide in
-        // progress without its momentum-ended phase.
-        let machine = engagedMachine()
-        var out = StepOutput()
-        var t = 0.0
-        for frame in scrollDown where !machine.needsTicks {
-            out.append(machine.process(frame))
-            t = frame.timestamp
-        }
-        XCTAssertTrue(machine.needsTicks)
-        var config = GestureConfig()
-        config.momentumFriction += 1
-        machine.updateConfig(config)
-        XCTAssertTrue(machine.needsTicks, "a settings change must not drop the glide")
-        while machine.needsTicks && t < 60 {
-            t += 1.0 / 120
-            out.append(machine.tick(at: t))
-        }
-        XCTAssertEqual(out.scrolls(.momentumEnded).count, 1)
-    }
-
-    func testReverseScrollDirectionSetting() {
-        var config = GestureConfig()
-        config.naturalScrolling = false
-        let out = drive(engagedMachine(config), scrollDown)
-        let total = (out.scrolls(.changed) + out.scrolls(.momentumChanged)).map(\.1).reduce(0, +)
-        XCTAssertLessThan(total, -100)
     }
 
     func testBothPalmsEngageOnlyAfterHoldDuration() {
@@ -184,11 +142,6 @@ final class PointerStateMachineTests: XCTestCase {
         XCTAssertEqual([click.clicks.count, click.downs, click.zooms.count, click.scrolls(.began).count], [1, 0, 0, 0])
         let drag = drive(engagedMachine(), SyntheticStream.fistDrag())
         XCTAssertEqual([drag.clicks.count, drag.downs, drag.ups, drag.zooms.count, drag.scrolls(.began).count], [0, 1, 1, 0, 0])
-        let zoom = drive(engagedMachine(), SyntheticStream.twoFists())
-        XCTAssertEqual([zoom.clicks.count, zoom.downs, zoom.scrolls(.began).count], [0, 0, 0])
-        XCTAssertEqual(zoom.zooms.filter { $0.1 == .changed }.count, 1)
-        let scroll = drive(engagedMachine(), scrollDown)
-        XCTAssertEqual([scroll.clicks.count, scroll.downs, scroll.zooms.count, scroll.scrolls(.began).count], [0, 0, 0, 1])
     }
 
     func testMomentumWithZeroFrictionStaysFinite() {

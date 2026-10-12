@@ -71,6 +71,8 @@ public struct GestureDetector {
 
     public var config: GestureConfig
     public private(set) var state = State()
+    /// This frame's pose before confirmation (a fist shows here a few frames before `state`).
+    public private(set) var observedPose: HandPose?
 
     private var poseCandidate: (pose: HandPose, since: Double)?
 
@@ -80,6 +82,7 @@ public struct GestureDetector {
 
     public mutating func reset() {
         state = State()
+        observedPose = nil
         poseCandidate = nil
     }
 
@@ -89,6 +92,7 @@ public struct GestureDetector {
         let features = HandFeatures(hand)
         state.features = features
         let observed = rawPose(features)
+        observedPose = observed
         if observed == state.pose {
             poseCandidate = nil
             return []

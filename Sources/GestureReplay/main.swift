@@ -16,7 +16,7 @@ Usage:
 """
 
 enum Scenario: String, CaseIterable {
-    case steady, jitter, ramp, click, drag, zoom, scroll, palm, lost, demo
+    case steady, jitter, ramp, click, drag, palm, lost, demo
 
     var frames: [TrackingFrame] {
         switch self {
@@ -25,15 +25,13 @@ enum Scenario: String, CaseIterable {
         case .ramp: return SyntheticStream.ramp(from: Point2(0.65, 0.45), to: Point2(0.35, 0.45), duration: 0.6)
         case .click: return SyntheticStream.wiggleClick()
         case .drag: return SyntheticStream.fistDrag()
-        case .zoom: return SyntheticStream.twoFists()
-        case .scroll: return SyntheticStream.twoFists(spreadChange: 0, shift: Point2(0, 0.12))
         case .palm: return SyntheticStream.palmHold(hold: 1.0)
         case .lost: return SyntheticStream.handLost()
         case .demo:
             // A little of everything, back to back.
             var all: [TrackingFrame] = []
             var offset = 0.0
-            for part in [Scenario.ramp, .click, .drag, .zoom, .scroll] {
+            for part in [Scenario.ramp, .click, .drag] {
                 let frames = part.frames
                 all += frames.map { frame in
                     var f = frame

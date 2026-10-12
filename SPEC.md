@@ -2,8 +2,10 @@
 
 > **Gesture set superseded (Oct 2026, owner request):** pinch-to-click, pinch drag, fist scroll,
 > two-hand pinch zoom, the app switcher, dwell click and the pinch calibration step were removed.
-> Wisp now has one gesture model (lock, wiggle click, fist drag, two-fist zoom/scroll, two-palm
-> toggle). See README → Gesture cheat sheet and DECISIONS.md. The rest of this spec still applies.
+> Wisp now has one gesture model: the cursor follows the index finger while it moves calmly and
+> freezes while it moves fast; a wiggle clicks any time; a fist drags; two open palms toggle.
+> Two-fist zoom/scroll and the rest-to-lock step were removed later (owner request). See README →
+> Gesture cheat sheet and DECISIONS.md. The rest of this spec still applies.
 
 ## The pitch
 

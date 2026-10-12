@@ -75,11 +75,11 @@ final class ReplayTests: XCTestCase {
 final class ConfigTests: XCTestCase {
     func testLenientDecodeKeepsDefaultsForMissingKeys() throws {
         // Old settings files carry keys of retired models (inputModel, pinchEnter, velocity…).
-        let json = #"{"inputModel": "pose", "pinchEnter": 0.3, "scrollSpeed": 2.5, "shake": {"lockTime": 1.5}, "velocity": {"vEnter": 1}}"#
+        let json = #"{"inputModel": "pose", "pinchEnter": 0.3, "scrollSpeed": 2.5, "shake": {"lockTime": 1.5, "freezeSpeed": 3.5}, "velocity": {"vEnter": 1}}"#
         let config = try GestureConfig.decodeLenient(Data(json.utf8))
         XCTAssertEqual(config.scrollSpeed, 2.5)
-        XCTAssertEqual(config.shake.lockTime, 1.5)
-        XCTAssertEqual(config.shake.wakeTime, ShakeParams().wakeTime)
+        XCTAssertEqual(config.shake.freezeSpeed, 3.5)
+        XCTAssertEqual(config.shake.resumeTime, ShakeParams().resumeTime)
         XCTAssertEqual(config.palmThumbClearance, GestureConfig.default.palmThumbClearance)
     }
 

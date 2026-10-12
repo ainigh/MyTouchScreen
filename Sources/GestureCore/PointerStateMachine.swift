@@ -6,12 +6,10 @@ public enum PointerState: String, Codable, Equatable {
     case idle
     /// Engaged but no hand is visible.
     case engaged
-    /// The cursor follows the finger (or is locked, waiting for a wiggle or a fist).
+    /// The cursor follows the finger (or is frozen while the hand moves fast).
     case hover
     /// A fist pressed the button and the cursor follows it.
     case dragging
-    /// Both hands are fists; when they rest, their last stroke zooms or scrolls.
-    case twoFists
 }
 
 /// Read-only view of the machine after each step, for the overlay and HUD.
@@ -23,9 +21,8 @@ public struct PointerSnapshot: Equatable {
     public var displayID: String?
     /// 0...1 while both open palms are held to toggle engagement.
     public var engageProgress: Double = 0
-    /// The lock ring: fills while the cursor settles, 1 while locked, drains through the wake
-    /// window (the second in which a wiggle clicks and a fist presses).
-    public var lockProgress: Double = 0
+    /// The hand is moving fast, so the cursor holds still (a wiggle here clicks right there).
+    public var isFrozen = false
     /// 0...1 while the hand is held at a screen edge toward another display.
     public var displayJumpProgress: Double = 0
     public var hands: [HandFrame] = []
@@ -57,12 +54,9 @@ public struct StepOutput: Equatable {
 /// for the gestures).
 ///
 /// ```
-/// idle ──both palms / hotkey──▶ engaged ──hand seen──▶ hover ──rest 1 s──▶ locked
-///                                                        ▲                   │ move: 1 s window
-///                                                        │                   ├─ wiggle ──▶ click (stays locked)
-///                                                        │                   ├─ fist ───▶ dragging ──open──▶ drop
-///                                                        └──── window ends ──┘
-///  hover ──two fists──▶ twoFists ──rest──▶ zoom / scroll by the last stroke
+/// idle ──both palms / hotkey──▶ engaged ──hand seen──▶ hover ──fast motion──▶ frozen ──calm──▶ hover
+///                                                        │  └─ wiggle (any time) ──▶ click
+///                                                        └─ fist ──▶ dragging ──open──▶ drop
 /// ```
 ///
 /// All timing comes from frame timestamps, never the wall clock, so a replay reproduces a
@@ -80,7 +74,7 @@ public final class PointerStateMachine {
     var smoother: PointerSmoother
     var momentum: ScrollMomentum
 
-    // Hand slots: the pointing hand and the other hand (two-hand gestures only).
+    // Hand slots: the pointing hand and the other hand (the two-palm toggle only).
     var primary: GestureDetector
     var secondary: GestureDetector
     var primaryLastPalm: Point2?
@@ -94,7 +88,7 @@ public final class PointerStateMachine {
     var lastEmittedCursor: Point2?
     var lastBox: Point2?
     /// Box-space offset added to the tracked point so the cursor starts a drag exactly where
-    /// the button went down (the palm sits below the fingertip) or carries on after a lock.
+    /// the button went down (the palm sits below the fingertip) or carries on after a freeze.
     var warpOffset = Point2.zero
     var lastRawBox: Point2?
     /// True only between an emitted `.down` and its `.up`, so a drag that began while output was
@@ -115,15 +109,23 @@ public final class PointerStateMachine {
     /// may act on them.
     var bothPalmsOpen = false
 
-    // Lock, click, drag, two fists (see PointerStateMachine+Shake.swift).
-    /// Where and since when the cursor has been still (toward a lock).
-    var dwellAnchor: (time: Double, point: Point2)?
-    var cursorLock: CursorLock?
+    // Freeze, click, drag (see PointerStateMachine+Shake.swift).
+    var freeze: CursorFreeze?
+    /// Recent shown cursor positions, to click where a wiggle began.
+    var cursorHistory: [(time: Double, point: Point2)] = []
+    /// The latest cursor position while the hand moved calmly: where a freeze holds it.
+    var lastCalmCursor: (time: Double, point: Point2)?
+    /// A fist must be made with the hand seen open first: one held while engaging, or after the
+    /// real mouse interrupted a drag, never presses by itself.
+    var fistNeedsOpenHand = true
+    /// A fist being held toward a press: since when, and where it will press.
+    var pendingFist: (since: Double, point: Point2)?
     var shakeDetector: ShakeDetector
-    var twoFists: TwoFistGesture?
-    var twoFistsGoneSince: Double?
     var tipSpeed: Double = 0
-    var lastTip: (time: Double, point: Point2)?
+    /// The newest frame-to-frame speed alone (no glitch protection), to hold the cursor for a
+    /// frame while a burst is confirmed.
+    var latestTipSpeed: Double = 0
+    var recentTips: [(time: Double, point: Point2)] = []
 
     /// Where the real mouse pointer is, kept up to date by the app while disengaged, so a palm
     /// engage can start on that display.
@@ -237,9 +239,11 @@ public final class PointerStateMachine {
         if isEngaged && !wasSuppressed {
             out.events.append(.externalMouseTookOver)
         }
-        // A locked hand cursor is stale once the real mouse has moved; start over from the hand.
-        cursorLock = nil
-        dwellAnchor = nil
+        // A frozen hand cursor is stale once the real mouse has moved; start over from the hand.
+        freeze = nil
+        cursorHistory.removeAll()
+        lastCalmCursor = nil
+        fistNeedsOpenHand = true
         if state == .dragging {
             // Our synthetic button is still down, so the real mouse would drag whatever the fist
             // grabbed. Let go where the real mouse is (never warp it back).
@@ -351,7 +355,7 @@ public final class PointerStateMachine {
             return StepOutput()
         }
         notBothPalmsSince = nil
-        let busy = [.dragging, .twoFists].contains(state)
+        let busy = state == .dragging
         let still = max(palmSpeed, secondaryPalmSpeed) < config.palmStillnessNormalized
         guard !palmLatched, !busy, still else {
             palmHoldStart = nil
@@ -394,8 +398,7 @@ public final class PointerStateMachine {
         return out
     }
 
-    /// Ends a drag cleanly so the button is never left held down, and forgets any lock or
-    /// two-fist gesture.
+    /// Ends a drag cleanly so the button is never left held down, and forgets any freeze.
     private func cancelActiveGestures() -> StepOutput {
         var out = StepOutput()
         if buttonDown, let point = lastEmittedCursor ?? cursor {
@@ -410,13 +413,15 @@ public final class PointerStateMachine {
 
     func resetGestures() {
         shakeDetector.reset()
-        cursorLock = nil
-        dwellAnchor = nil
-        twoFists = nil
-        twoFistsGoneSince = nil
+        freeze = nil
+        cursorHistory.removeAll()
+        lastCalmCursor = nil
+        fistNeedsOpenHand = true
+        pendingFist = nil
         warpOffset = .zero
         lastRawBox = nil
-        lastTip = nil
+        recentTips.removeAll()
+        latestTipSpeed = 0
     }
 
     // MARK: Cursor helpers
@@ -441,20 +446,6 @@ public final class PointerStateMachine {
         return StepOutput(intents: [.move(x: p.x, y: p.y)])
     }
 
-    /// Fills while the cursor settles toward a lock, stays full while locked, and drains through
-    /// the wake window (wiggle or make a fist before it empties).
-    private func lockProgress(at time: Double) -> Double {
-        guard isEngaged, [.hover, .dragging].contains(state) else { return 0 }
-        if let lock = cursorLock {
-            guard let wake = lock.wakeStart else { return 1 }
-            return clamp01(1 - (time - wake) / max(config.shake.wakeTime, 1e-6))
-        }
-        guard let anchor = dwellAnchor else { return 0 }
-        // Show nothing for the first quarter so ordinary pauses do not flash the ring.
-        let t = (time - anchor.time) / max(config.shake.lockTime, 1e-6)
-        return t < 0.25 ? 0 : clamp01((t - 0.25) / 0.75)
-    }
-
     // MARK: Snapshot
 
     private func refreshSnapshot(at time: Double) {
@@ -463,7 +454,7 @@ public final class PointerStateMachine {
         snapshot.cursor = isEngaged ? cursor : nil
         snapshot.displayID = router.current?.id
         snapshot.engageProgress = engageProgress(at: time)
-        snapshot.lockProgress = lockProgress(at: time)
+        snapshot.isFrozen = isEngaged && freeze != nil
         snapshot.displayJumpProgress = router.jumpProgress(at: time)
         snapshot.pose = primary.state.pose
         snapshot.outputSuppressed = time < outputSuppressedUntil

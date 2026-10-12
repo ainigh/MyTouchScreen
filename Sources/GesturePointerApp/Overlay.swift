@@ -4,7 +4,7 @@ import GestureCore
 import QuartzCore
 
 /// One transparent, click-through window per screen, above everything, drawing the cursor halo,
-/// the lock and engage rings, the click ripple, the display-jump edge glow, toasts and the
+/// the freeze and engage rings, the click ripple, the display-jump edge glow, toasts and the
 /// standby glyph.
 ///
 /// All methods are main-thread only. Updates arrive at camera rate; layer changes that track
@@ -102,14 +102,14 @@ final class OverlayView: NSView {
             self.point = point
             if snapshot.isEngaged {
                 color = Theme.color(for: snapshot.state)
-                isDown = [.dragging, .twoFists].contains(snapshot.state)
+                isDown = snapshot.state == .dragging
                 if snapshot.engageProgress > 0 {
                     ringProgress = snapshot.engageProgress
                     ringColor = Theme.idle
                 } else {
-                    // Fills as the cursor settles, full while locked, drains through the second
-                    // in which a wiggle clicks or a fist grabs.
-                    ringProgress = snapshot.lockProgress
+                    // Full while the hand moves fast and the cursor holds still: a wiggle now
+                    // clicks right where it is.
+                    ringProgress = snapshot.isFrozen ? 1 : 0
                     ringColor = Theme.accent
                 }
             } else {
@@ -270,8 +270,8 @@ final class OverlayView: NSView {
 // MARK: - Halo
 
 /// The cursor halo: a translucent puck for contrast on any background, a glowing ring in the
-/// state colour, a dot while the button is down (fist drag) or both fists are held, and an outer
-/// arc for slower progress (the palm hold, the cursor lock).
+/// state colour, a dot while the button is down (fist drag), and an outer arc for the palm hold
+/// and, full, while the cursor is frozen.
 final class HaloLayer: CALayer {
     private let puck = CAShapeLayer()
     private let ring = CAShapeLayer()

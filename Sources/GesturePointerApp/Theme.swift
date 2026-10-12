@@ -13,7 +13,6 @@ enum Theme {
 
     static let accent = rgb(0x2EC4B6)      // Wisp Teal: hover / engaged
     static let dragging = rgb(0x8B7CF6)    // Violet
-    static let zooming = rgb(0xFF6B9A)     // Rose
     static let warning = rgb(0xFF6B5B)     // Coral
     static let idle = rgb(0x9AA3AD)        // Slate, for standby glyphs
 
@@ -22,7 +21,6 @@ enum Theme {
         case .idle: return idle
         case .engaged, .hover: return accent
         case .dragging: return dragging
-        case .twoFists: return zooming
         }
     }
 
