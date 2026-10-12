@@ -1,8 +1,8 @@
 name: build
 
+# Runs on pull requests and on demand. Needs GitHub Actions minutes available to the repository
+# (macOS runners bill at a higher rate on private repositories).
 on:
-  push:
-    branches: [main, "claude/**"]
   pull_request:
   workflow_dispatch:
 
