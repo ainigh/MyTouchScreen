@@ -18,9 +18,8 @@ public enum PointerState: String, Codable, Equatable {
     case switchingApps
     /// Velocity mode: the hand is in a fast segment (a flick that may become a click or scroll).
     case flicking
-    /// Hold & wiggle: the left hand is up, so the right hand's next clear move drags (the
-    /// button isn't down yet; a wiggle now zooms instead).
-    case dragReady
+    /// Hold & wiggle: both hands are fists; when they rest, their last stroke zooms or scrolls.
+    case twoFists
 }
 
 struct PointerSample {
@@ -110,8 +109,8 @@ public final class PointerStateMachine {
     var momentum: ScrollMomentum
 
     // Hand slots: the pointing hand and an optional second hand (for zoom).
-    private var primary: GestureDetector
-    private var secondary: GestureDetector
+    var primary: GestureDetector
+    var secondary: GestureDetector
     var primaryLastPalm: Point2?
     private var secondaryLastPalm: Point2?
     var primaryLastSeen: Double = -.infinity
@@ -181,13 +180,8 @@ public final class PointerStateMachine {
 
     // Hold & wiggle (see PointerStateMachine+Shake.swift).
     var shakeDetector: ShakeDetector
-    var shakeScrollVertical = true
-    var shakeStillSince: Double?
-    var modifierSince: Double?
-    var modifierLastSeen: Double?
-    /// Where an armed drag presses: the cursor and right-hand centroid when the left hand came up.
-    var dragPress: (point: Point2, centroid: Point2, time: Double)?
-    var dragSettleSince: Double?
+    var twoFists: TwoFistGesture?
+    var twoFistsGoneSince: Double?
     var tipSpeed: Double = 0
     var lastTip: (time: Double, point: Point2)?
     /// Set while the cursor is locked in place (held still; see PointerStateMachine+Shake.swift).
@@ -383,7 +377,7 @@ public final class PointerStateMachine {
         var out = StepOutput()
 
         let (primaryHand, secondaryHand, primaryReplaced) = config.inputModel == .dwellShake
-            ? assignPointerAndModifier(frame.hands, at: time)
+            ? assignPointerAndOther(frame.hands, at: time)
             : assignHands(frame.hands, at: time)
         snapshot.hands = frame.hands
         if primaryReplaced && isEngaged {
@@ -434,7 +428,7 @@ public final class PointerStateMachine {
             hadHandRecently = true
             if state == .engaged { state = .hover }
             switch config.inputModel {
-            case .dwellShake: out.append(updatePointerShake(hand, modifier: secondaryHand, at: time))
+            case .dwellShake: out.append(updatePointerShake(hand, other: secondaryHand, at: time))
             case .velocity: out.append(updatePointerVelocity(hand, secondary: secondaryHand, at: time))
             case .pose: out.append(updatePointer(hand, secondary: secondaryHand, at: time))
             }

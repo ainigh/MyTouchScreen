@@ -12,10 +12,9 @@ extension PointerStateMachine {
     func resetVelocity() {
         _ = velocityEngine.reset()
         shakeDetector.reset()
-        shakeStillSince = nil
         cursorLock = nil
-        dragPress = nil
-        dragSettleSince = nil
+        twoFists = nil
+        twoFistsGoneSince = nil
         warpOffset = .zero
         lastRawBox = nil
         trailAnchorTime = nil

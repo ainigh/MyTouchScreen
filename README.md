@@ -103,38 +103,44 @@ time from the menu bar (*Calibrate This Display…*); each display keeps its own
 
 ## Turning it on and off
 
-- **Engage:** hold up an open palm, fingers spread, for about half a second. A ring fills and
+- **Engage:** hold up **both hands** as open palms, fingers spread, for about half a second
+  (one palm alone does nothing). A ring fills and
   a chime plays. Or press **⌃⌥⌘G** (changeable in Settings).
-- **Disengage:** the same palm (held a little longer), the same shortcut, or just drop your
+- **Disengage:** both palms again (held a little longer), the same shortcut, or just drop your
   hand out of view for 2 seconds.
 - While engaged, touching the real mouse or trackpad always wins: Wisp pauses for a moment.
 - **Off** (menu bar → *Turn Wisp Off*) stops the camera completely.
 
-Standby note: while disengaged with "Open palm toggles Wisp" enabled, the camera stays on (its
-green light too) and Wisp looks at a few frames per second for your palm, using almost no CPU.
+Standby note: while disengaged with "Both open palms toggle Wisp" enabled, the camera stays on (its
+green light too) and Wisp looks at a few frames per second for your palms, using almost no CPU.
 Turn that setting off to stop the camera whenever Wisp is disengaged and use the shortcut.
 
 ## Gesture cheat sheet — Hold & wiggle (default)
 
-Your **right hand** points. Your **left hand** is a modifier: whether it's in view changes what
-the right hand means — its pose and position don't matter.
+Your **right hand** points. The left hand only joins in for two-hand gestures.
 
-| Left hand | Right hand | Action |
+**The lock.** Hold the cursor still for 1 second and it **locks** (the outer ring fills, then
+stays full). When you move again, the cursor stays locked for **1 more second** (the ring drains)
+— that second is when you click or grab. Do nothing and the cursor unlocks and jumps to where you
+point.
+
+| Hands | What you do | Action |
 |---|---|---|
-| down | point and move | Cursor follows the fingertip — any movement is just movement |
-| down | move to a target, then hold still for 2 s | Left click, once (a ring fills while you hold; move and settle again for the next click) |
-| down | wiggle back and forth — 3 changes of direction within 1 s — then move | Scroll: the cursor returns to where the wiggle started; up/down movement scrolls (sideways for a sideways wiggle); hold still ½ s to stop |
-| **up** | move | Drag: the button goes down where the cursor was when the left hand came up |
-| **up → down** | — | Drop |
-| **up** | wiggle, then move up / down | Zoom in / out (sideways wiggle: right = in); hold still ½ s to stop |
-| — | open right palm held still | Engage / disengage |
+| right | point and move | Cursor follows the fingertip |
+| right | rest 1 s, then **wiggle** (left-right-left) within the next second | Left click where the cursor is locked. It stays locked, so wiggle again for a double click |
+| right | rest 1 s, then make a **fist** within the next second | Press there and drag: the cursor follows the fist (same lock rules — rest, then it waits a second after you move on) |
+| right | **open** the fist | Drop where the cursor is (the locked point if it rested) |
+| both | **fists**, spread apart, rest | Zoom in |
+| both | fists, bring together, rest | Zoom out |
+| both | fists, move both the same way, rest | Scroll that way (content follows the fists) |
+| both | **open palms**, held still | Engage / disengage |
 
-Notes: engaging never clicks by itself — the cursor has to move and settle first. With the left
-hand up, the button only goes down once the right hand clearly moves (about half a hand's length,
-or a small move followed by holding still), so a wiggle can still mean zoom. There's no right
-click in this model. With two monitors the cursor stays on the monitor the mouse pointer was on
-when Wisp engaged (Settings → Pointer). Wiggling the index finger works as well as wiggling the
-whole hand: everything follows the fingertip.
+Notes: only the **last stroke before you rest** counts for two fists — close them, widen them,
+rest: zoom in again (a ratchet, like lifting a mouse). Raise-then-lower and rest scrolls down.
+The cursor stays put during two-fist gestures. Engaging never clicks by itself, and resting
+never clicks — only a wiggle does. There's no right click in this model. With two monitors the
+cursor stays on the monitor the mouse pointer was on when Wisp engaged (Settings → Pointer).
+Wiggling the index finger works as well as wiggling the whole hand.
 Left-handed? Settings → Gestures → *Pointing hand: Left* swaps the roles.
 
 ## Gesture cheat sheet — Velocity mode
@@ -219,7 +225,8 @@ your fingers started closing, so you don't need to hold perfectly still.
   the rule that decided.
 - **Halo** around the cursor, colour-coded: teal = pointing, amber = fingers closing (the inner
   ring fills as the pinch closes), violet = dragging, blue = scrolling, rose = zooming.
-- **Outer ring** fills during a palm hold (engage/disengage) or a dwell click.
+- **Outer ring** fills during a palm hold (engage/disengage) or a dwell click; in Hold & wiggle it
+  fills as the cursor settles, stays full while locked and drains through the second after you move.
 - **Edge glow** while you hold the cursor against an edge to jump displays.
 - **Toasts** at the top of the screen for state changes ("Engaged", "Standing by", "Camera
   paused", "Accessibility permission needed").
@@ -236,10 +243,10 @@ Menu bar → *Settings…*
   edge jumps between displays), *Active area* (how much hand movement covers the screen), *Steadiness* and
   *Responsiveness* (the 1€ filter's min cutoff and beta), *Rest lock* (how firmly a still cursor
   holds), *Precision* (slow movements are scaled down for fine targeting).
-- **Gestures:** *Input model* (Hold & wiggle / Velocity / Pose). Hold & wiggle: hold time,
-  how still is still, how many changes of direction within how long make a wiggle, the
-  smallest stroke that counts, when scrolling/zooming stops, how far the right hand moves before
-  a drag presses, zoom speed, scroll speed and direction. Velocity: which tap direction is the left
+- **Gestures:** *Input model* (Hold & wiggle / Velocity / Pose). Hold & wiggle: how long a rest locks the cursor and
+  how long it stays locked after you move, how still is still, the click wiggle (changes of
+  direction, within how long, smallest stroke), the double-click window, and for two fists the
+  smallest stroke, rest time and zoom strength; scroll speed and direction. Velocity: which tap direction is the left
   click, right click and drag on/off, scroll gain and momentum, scroll direction (follows the
   system by default), the "why not?" readout, and an *Advanced* section with every Velocity
   threshold plus *Reset to tuned defaults*. Pose: pinch thresholds, hold-to-drag time, scroll speed and direction, momentum,
