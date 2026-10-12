@@ -1,0 +1,7 @@
+.build/
+.swiftpm/
+build/
+GesturePointer.app/
+*.xcodeproj
+.DS_Store
+Resources/Generated/
