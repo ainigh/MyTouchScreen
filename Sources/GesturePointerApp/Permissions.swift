@@ -36,6 +36,44 @@ enum Permissions {
 
     static var accessibilityGranted: Bool { AXIsProcessTrusted() }
 
+    /// Set once Accessibility has worked for any build of Wisp on this Mac.
+    private static let grantedBeforeKey = "accessibilityGrantedBefore"
+
+    static func noteAccessibilityGranted() {
+        UserDefaults.standard.set(true, forKey: grantedBeforeKey)
+    }
+
+    /// After an update, macOS can keep Wisp's Accessibility switch on while no longer trusting the
+    /// new build (the grant was tied to the old build's signature). Toggling the switch doesn't
+    /// fix that; only removing the entry does. So when an earlier build was trusted and this one
+    /// isn't, remove our own stale entry and ask again: the user just turns the switch on. Runs
+    /// once per lapse, so someone who switched Wisp off on purpose isn't nagged on every launch.
+    static func repairAccessibilityAfterUpdate() {
+        let defaults = UserDefaults.standard
+        guard !AXIsProcessTrusted(), defaults.bool(forKey: grantedBeforeKey) else { return }
+        defaults.set(false, forKey: grantedBeforeKey)
+        resetAccessibilityEntry()
+        promptAccessibility()
+    }
+
+    /// Removes this app's entry from the Accessibility list (`tccutil reset`, which only touches
+    /// our own bundle identifier and needs no admin rights). Only called while untrusted, so
+    /// nothing that works is lost.
+    static func resetAccessibilityEntry() {
+        guard !AXIsProcessTrusted(), let bundleID = Bundle.main.bundleIdentifier else { return }
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
+        task.arguments = ["reset", "Accessibility", bundleID]
+        task.standardOutput = FileHandle.nullDevice
+        task.standardError = FileHandle.nullDevice
+        do {
+            try task.run()
+            task.waitUntilExit()
+        } catch {
+            NSLog("Wisp: tccutil reset failed: \(error.localizedDescription)")
+        }
+    }
+
     /// Shows the system "would like to control this computer" prompt, which also adds the app
     /// to the Accessibility list so the user only has to flip the switch.
     static func promptAccessibility() {
@@ -121,9 +159,11 @@ struct WelcomeView: View {
             }
 
             step(number: 2, title: "Accessibility",
-                 detail: "Lets Wisp move the pointer and click. Turn on “GesturePointer” in the list — the app itself, not Terminal. After an update, if it's already on but Wisp still asks, remove it with − and turn it on again.",
+                 detail: "Lets Wisp move the pointer and click. Turn on “GesturePointer” in the list — the app itself, not Terminal. If it already looks on, press the button again: Wisp clears its old entry first, so the switch you turn on is the right one.",
                  done: monitor.accessibility) {
                 Button("Open Accessibility Settings") {
+                    // A stale entry from an earlier build would look on but not work.
+                    Permissions.resetAccessibilityEntry()
                     Permissions.promptAccessibility()
                     Permissions.openAccessibilitySettings()
                 }

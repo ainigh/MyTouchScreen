@@ -108,6 +108,11 @@ final class AppController: MenuBarActions {
             let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
             startRecording(to: url)
         }
+        if axGranted {
+            Permissions.noteAccessibilityGranted()
+        } else {
+            Permissions.repairAccessibilityAfterUpdate()
+        }
         if !settings.hasCompletedOnboarding || Permissions.cameraState != .granted || !axGranted {
             showWelcome()
         }
@@ -351,7 +356,10 @@ final class AppController: MenuBarActions {
         let ax = Permissions.accessibilityGranted
         if ax != axGranted {
             axGranted = ax
-            if ax { overlay?.toast("Accessibility granted", symbol: "checkmark.circle.fill") }
+            if ax {
+                Permissions.noteAccessibilityGranted()
+                overlay?.toast("Accessibility granted", symbol: "checkmark.circle.fill")
+            }
         }
         // The system scroll direction may have changed in System Settings.
         pushConfigIfChanged()

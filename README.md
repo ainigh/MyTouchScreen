@@ -62,12 +62,15 @@ paste to Claude Code.
 GitHub Actions (`.github/workflows/build.yml`) tests and builds every push, and publishes a
 release (`v1.0.<run number>`, with `GesturePointer.zip`) for every push to `main`.
 
-**Permissions after an update.** The app is ad-hoc signed, so macOS treats each new build as a
-new app and may ask for Camera and Accessibility again; Wisp's Setup window comes up when it
-needs them. If Accessibility is already switched on but Wisp still asks, remove GesturePointer
-from the list with **−** and turn it on again. To keep permissions across updates, sign with your
-own certificate: create a "Code Signing" certificate in Keychain Access (Certificate Assistant →
-Create a Certificate…, type *Code Signing*), then run
+**Permissions after an update.** The app is ad-hoc signed with a requirement of just its bundle
+identifier (`app.wisp.GesturePointer`), so macOS keeps the Camera and Accessibility grants
+across updates. (Builds before this change were tied to their exact binary, which is why the
+Accessibility switch could look on but not work until removed and re-added.) If that ever
+happens anyway, Wisp notices on launch that an earlier build was trusted and this one isn't,
+clears its own stale entry and asks again, so you only turn the switch on; the Setup window's
+*Open Accessibility Settings* button does the same. To sign with your own certificate instead,
+create a "Code Signing" certificate in Keychain Access (Certificate Assistant → Create a
+Certificate…, type *Code Signing*), then run
 `defaults write app.wisp.GesturePointer signIdentity "THE CERTIFICATE NAME"` once. Updates built
 on your Mac are then signed with it.
 
@@ -185,7 +188,7 @@ frame rate and Vision's speed for 5 seconds, and lists anything wrong.
 
 | Problem | Fix |
 |---|---|
-| Halo moves but nothing clicks or moves | Accessibility isn't granted to *this build* of GesturePointer.app. Toggle it off/on in System Settings → Privacy & Security → Accessibility. |
+| Halo moves but nothing clicks or moves | Accessibility isn't granted to *this build* of GesturePointer.app. Menu → *Setup & Permissions…* → *Open Accessibility Settings* (it clears the stale entry), then turn GesturePointer on. |
 | Menu-bar icon shows a warning triangle | A permission is missing: menu → *Setup & Permissions…* |
 | Cursor shimmers | Better light on your hand; Settings → Pointer → lower *Steadiness* or raise *Rest lock*. |
 | Cursor feels sluggish | Raise *Responsiveness*; check `make doctor` shows ≥ 30 fps. |

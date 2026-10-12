@@ -107,6 +107,12 @@ Resume from the first unchecked item. Tick only after verification per `CLAUDE.m
 - [x] Settings, overlay, calibration, menu text, Makefile, README, SPEC notes, DECISIONS; Linux build + tests + check.sh green; Mac changes reviewed, not compiled
 - [x] Committed
 
+## Accessibility survives updates (owner report)
+- [x] Ad-hoc signature with an identifier-only designated requirement (make-app.sh), so a new build matches the existing grant
+- [x] App clears its own stale Accessibility entry (tccutil reset) and re-prompts when an earlier build was trusted and this one isn't; Setup button does the same
+- [x] README + DECISIONS; script syntax checked; Mac code reviewed, not compiled (CI compiles it)
+- [x] Committed
+
 ## Owner handoff (for the human, after Claude is done)
 1. `xcode-select --install` if not already done.
 2. `make app && make run`.
