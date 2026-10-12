@@ -2,45 +2,48 @@ import Foundation
 
 /// Hold & wiggle tunables. Distances in hand sizes (wrist → middle MCP), times in seconds.
 public struct ShakeParams: Equatable, Codable {
-    /// Hold the cursor still this long to click.
-    public var dwellTime = 2.0
+    /// Hold the cursor still this long and it locks in place.
+    public var lockTime = 1.0
     /// "Still" = the cursor stays within this fraction of the screen width. A calm real
     /// fingertip drifts the cursor 25–40 pt over a couple of seconds (owner's recording), so
     /// this is wider than the Pose-mode dwell radius.
     public var dwellRadiusBox = 0.025
-    /// Direction changes along one axis that start scrolling…
-    public var reversals = 3
+    /// A locked cursor wakes when the hand moves this far (hand sizes) from where it rested…
+    public var wakeDistance = 0.12
+    /// …and stays put this long after that: a wiggle within this time clicks where it is
+    /// locked, a fist presses there (drag), opening the fist drops.
+    public var wakeTime = 1.0
+    /// Direction changes along one axis that make the click wiggle (left-right-left)…
+    public var reversals = 2
     /// …all within this window.
     public var window = 1.0
     /// A movement only counts as a stroke (and its end as a direction change) once it has
     /// travelled this far, so tracker jitter and small corrections never add up to a wiggle.
     public var minStroke = 0.25
-    /// Scrolling ends when the fingertip stays below this speed (hand sizes per second)…
+    /// A second wiggle click within this long of the first, at the same spot, is a double click.
+    public var doubleClickWindow = 1.5
+    /// Below this speed (hand sizes per second) the hand counts as stopped after a click.
     /// A resting real fingertip jitters at 0.35–0.8 hand sizes/s (owner's recording).
     public var exitStillSpeed = 1.2
-    /// …for this long.
-    public var exitStillTime = 0.5
 
-    // Left hand = modifier (drag, and a wiggle zooms).
-    /// The left hand must be seen this long before it counts (a one-frame ghost doesn't)…
-    public var modifierAppearTime = 0.1
-    /// …and missing this long before it counts as gone (Vision drops hands for a frame).
-    public var modifierGoneTime = 0.25
-    /// With the left hand up, the right hand moving this far (hand sizes) presses and drags.
-    /// Smaller moves wait, so a wiggle can still become a zoom without pressing anything.
-    public var dragCommitDistance = 0.6
-    /// A smaller move (at least this far) commits when the hand then holds still, or when the
-    /// left hand drops.
-    public var dragSmallDistance = 0.15
-    public var dragSettleTime = 0.3
-    /// Zoom mode: moving the palm this far (fraction of the screen width) doubles the zoom.
-    public var zoomDoublingBox = 0.25
+    // Two fists: when the hands rest, their last stroke zooms (spread changed) or scrolls
+    // (both moved the same way).
+    /// A stroke must change the spread or move the hands this far (hand sizes) to count.
+    public var twoHandStroke = 0.3
+    /// The hands rest when both move slower than this (hand sizes per second)…
+    public var twoHandRestSpeed = 1.0
+    /// …for this long.
+    public var twoHandRestTime = 0.3
+    /// Zoom factor = (spread after / spread before) ^ zoomGain.
+    public var zoomGain = 1.0
+    /// A fist that opens (or a hand that drops out) for this long ends the two-fist gesture.
+    public var fistGoneTime = 0.2
 
     public init() {}
 }
 
-/// Counts direction changes of the fingertip along each axis. Three changes on one axis within the
-/// window is a wiggle: the user wants to scroll along that axis.
+/// Counts direction changes of the fingertip along each axis. Enough changes on one axis within
+/// the window is a wiggle: the click gesture while the cursor is locked.
 public struct ShakeDetector {
     public var params: ShakeParams
 
@@ -107,7 +110,7 @@ public struct ShakeDetector {
 
     public struct Detection: Equatable {
         public var vertical: Bool
-        /// When the wiggle's first stroke began: where the cursor "was".
+        /// When the wiggle's first stroke began.
         public var startTime: Double
     }
 

@@ -152,7 +152,7 @@ final class OverlayView: NSView {
             if snapshot.isEngaged {
                 color = Theme.color(for: snapshot.state)
                 pinchProgress = snapshot.state == .scrolling ? 0 : snapshot.pinchProgress
-                isDown = [.pinched, .dragging, .zooming, .switchingApps].contains(snapshot.state)
+                isDown = [.pinched, .dragging, .zooming, .switchingApps, .twoFists].contains(snapshot.state)
                 if snapshot.engageProgress > 0 {
                     ringProgress = snapshot.engageProgress
                     ringColor = Theme.idle

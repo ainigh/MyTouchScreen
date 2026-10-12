@@ -234,13 +234,21 @@ public enum SyntheticStream {
         }
     }
 
-    /// An open palm held still for `hold` seconds starting at `start`, then pointing again.
+    /// Both hands held up as still open palms for `hold` seconds starting at `start` (the
+    /// engage toggle), then the right hand points again and the left goes down. With
+    /// `bothHands: false` only the right hand opens (which must not toggle).
     public static func palmHold(start: Double = 0.3, hold: Double = 1.0, fps: Double = 30,
-                                tail: Double = 0.6) -> [TrackingFrame] {
+                                tail: Double = 0.6, bothHands: Bool = true) -> [TrackingFrame] {
         generate(duration: start + hold + tail, fps: fps) { t in
             var hand = SyntheticHand.pointing(tipAt: Point2(0.5, 0.45))
-            if t >= start && t < start + hold { hand.makeOpenPalm() }
-            return [hand]
+            guard t >= start && t < start + hold else { return [hand] }
+            hand.makeOpenPalm()
+            guard bothHands else { return [hand] }
+            var left = SyntheticHand.pointing(tipAt: Point2(0.78, 0.45))
+            left.chirality = .left
+            left.makeOpenPalm()
+            left.wrist = left.wristPlacing(indexTipAt: Point2(0.78, 0.45))
+            return [hand, left]
         }
     }
 

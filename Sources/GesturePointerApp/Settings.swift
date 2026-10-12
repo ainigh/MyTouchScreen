@@ -271,7 +271,7 @@ private struct GestureSettings: View {
     private var modelHelp: String {
         switch model {
         case .dwellShake:
-            return "Right hand: every movement moves the cursor; hold still for 2 seconds to click; wiggle back and forth (3 changes of direction within a second), then move to scroll, hold still to stop. Raise your left hand (any pose) to drag with the right; lower it to drop. With the left hand up, a wiggle zooms instead: then move up to zoom in, down to zoom out."
+            return "Point with your right hand. Hold still for a second and the cursor locks; it stays put for a second after you move again. In that second: wiggle (left-right-left) to click where it is locked, wiggle twice to double-click, or make a fist to press and drag; open the fist to drop. Both hands as fists: spread them apart and rest to zoom in, bring them together and rest to zoom out, move both the same way and rest to scroll. Only the last stroke before you rest counts, so close-then-widen repeats a zoom in. Both open palms turn Wisp on and off."
         case .velocity:
             return "Your hand is the mouse: a quick tap from a still hand clicks, a long flick scrolls, tap then move drags."
         case .pose:
@@ -294,25 +294,32 @@ private struct GestureSettings: View {
             switch model {
             case .dwellShake:
                 Section("Hold & wiggle") {
-                    ValueSlider(title: "Hold still to click", value: $settings.config.shake.dwellTime,
-                                range: 0.8...4.0, format: "%.1f s")
+                    ValueSlider(title: "Hold still to lock the cursor", value: $settings.config.shake.lockTime,
+                                range: 0.4...3.0, format: "%.1f s")
+                    ValueSlider(title: "Locked after moving again", value: $settings.config.shake.wakeTime,
+                                range: 0.5...2.0, format: "%.1f s",
+                                help: "How long the cursor stays put once the hand moves again. Wiggle within this time to click, or make a fist to drag.")
                     ValueSlider(title: "Still means within", value: $settings.config.shake.dwellRadiusBox,
                                 range: 0.003...0.03, format: "%.3f",
                                 help: "Fraction of the screen width the cursor may wander while you hold still.")
-                    Stepper("Wiggle: \(settings.config.shake.reversals) changes of direction",
-                            value: $settings.config.shake.reversals, in: 2...6)
-                    ValueSlider(title: "Wiggle: within", value: $settings.config.shake.window,
+                    Stepper("Click wiggle: \(settings.config.shake.reversals) changes of direction",
+                            value: $settings.config.shake.reversals, in: 1...5)
+                    ValueSlider(title: "Click wiggle: within", value: $settings.config.shake.window,
                                 range: 0.5...2.0, format: "%.2f s")
-                    ValueSlider(title: "Wiggle: smallest stroke", value: $settings.config.shake.minStroke,
+                    ValueSlider(title: "Click wiggle: smallest stroke", value: $settings.config.shake.minStroke,
                                 range: 0.1...1.0, format: "%.2f × hand",
-                                help: "Shorter back-and-forth movements are ignored, so a shaky hand never scrolls.")
-                    ValueSlider(title: "Stop scrolling or zooming after holding still", value: $settings.config.shake.exitStillTime,
-                                range: 0.2...1.5, format: "%.2f s")
-                    ValueSlider(title: "Drag starts after moving", value: $settings.config.shake.dragCommitDistance,
-                                range: 0.3...1.5, format: "%.2f × hand",
-                                help: "With the left hand up, the right hand must move this far (or move a little and hold still) before the button goes down, so a wiggle can still mean zoom.")
-                    ValueSlider(title: "Zoom: doubles every", value: $settings.config.shake.zoomDoublingBox,
-                                range: 0.08...0.6, format: "%.2f of screen")
+                                help: "Shorter back-and-forth movements are ignored, so a shaky hand never clicks.")
+                    ValueSlider(title: "Double click: second wiggle within", value: $settings.config.shake.doubleClickWindow,
+                                range: 0.5...3.0, format: "%.1f s")
+                }
+                Section("Two fists: zoom and scroll") {
+                    ValueSlider(title: "Smallest stroke", value: $settings.config.shake.twoHandStroke,
+                                range: 0.1...1.0, format: "%.2f × hand",
+                                help: "How far the fists must spread, close or move together before resting for it to zoom or scroll.")
+                    ValueSlider(title: "Rest for", value: $settings.config.shake.twoHandRestTime,
+                                range: 0.1...1.0, format: "%.2f s")
+                    ValueSlider(title: "Zoom strength", value: $settings.config.shake.zoomGain,
+                                range: 0.5...3.0, format: "%.1f×")
                     Button("Reset Hold & wiggle to defaults") { settings.config.shake = ShakeParams() }
                 }
                 Section("Scroll") {
@@ -351,8 +358,8 @@ private struct GestureSettings: View {
                 }
             }
             Section("Engage") {
-                Toggle("Open palm toggles Wisp on and off", isOn: $settings.config.palmEngageEnabled)
-                Text("While off, Wisp keeps the camera at a few frames per second to watch for your palm. Turn this off to stop the camera completely and use the hotkey instead.")
+                Toggle("Both open palms toggle Wisp on and off", isOn: $settings.config.palmEngageEnabled)
+                Text("Hold up both hands, palms open, for about half a second. While off, Wisp keeps the camera at a few frames per second to watch for your palms. Turn this off to stop the camera completely and use the hotkey instead.")
                     .font(.caption).foregroundStyle(.secondary)
                 Picker("Pointing hand", selection: $settings.config.preferredHand) {
                     Text("Automatic").tag(Chirality.unknown)

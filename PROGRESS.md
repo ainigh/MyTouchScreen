@@ -92,6 +92,14 @@ Resume from the first unchecked item. Tick only after verification per `CLAUDE.m
 - [x] Regression test replays the owner recording; 129 tests, build, check.sh green; Mac change (pipeline passes the mouse location while disengaged) reviewed, not compiled
 - [x] Committed
 
+## Lock & wiggle click, fist drag, two-fist zoom/scroll, two-palm toggle (owner request)
+- [x] Rest 1 s locks the cursor; it stays locked 1 s after the next movement; a wiggle then clicks (only click; double click by wiggling again); a fist then drags, opening it drops
+- [x] Two fists: last stroke before resting zooms (spread) or scrolls (both move); other hand no longer a modifier; one-hand wiggle scroll removed
+- [x] Both open palms toggle engagement (one palm does nothing), all models
+- [x] Tests (138): lock, click position, wake timing, double click, fist drag/drop, two-fist zoom in/out/ratchet, scroll down/sideways/ratchet, palms; owner recording re-baselined
+- [x] Settings, hints, README, DECISIONS; Linux build + tests + check.sh green; Mac changes (strings, Theme case, settings sliders) reviewed, not compiled
+- [x] Committed
+
 ## Owner handoff (for the human, after Claude is done)
 1. `xcode-select --install` if not already done.
 2. `make app && make run`.
@@ -100,6 +108,7 @@ Resume from the first unchecked item. Tick only after verification per `CLAUDE.m
 5. Optionally run with `--record session.json` for a minute and hand the file back for tuning.
 
 ## Notes / blockers
+- Toolchain note (Oct 2026): on this sandbox CPU the Swift 6.0.3 `swift-driver` binary dies with "Illegal instruction"; symlinking `swift`, `swiftc` and `swift-driver` to `swift-frontend` (the legacy driver) in /opt/swift/usr/bin makes `swift build` / `swift test` work.
 - M7 (Oct 2026): 105 tests green on Linux (Swift 6.0.3), full `swift build` (incl. the new `tune` target) and check.sh green. Velocity accuracy on 200 synthetic samples per class, half at 30 fps: click 197, right-click 199, double-click 193, scroll-up 200, scroll-down 200, reposition-fast/slow 200, fine-target 200, drag 199, rest 200, jitter 200, out-of-frame 200, zoom 200. Thresholds are tuned against synthetic hands only — no owner recording yet (see "Owner loop after M7" in SPEC-M7). Mac layer (input-model switch, overlay trail/flash/why-not readout, settings, guided `--record --script`) written and independently reviewed (no compile issues found; guided-session warm-up, sounds, disengage-on-finish, run-loop mode and overlay-rebuild fixes applied) but NOT compiled — no macOS here.
 - Fix pass (Oct 2026): 77 tests green on Linux (Swift 6.0.3), full `swift build` and check.sh green. Core: tick timer only while gliding (`needsTicks`), settings change mid-glide no longer drops momentum-ended (regression test). Mac (review only, not compiled): launch-at-login toggle reflects the real state after a failed change, camera restarts after runtime errors with backoff, reconnecting the chosen camera picks it back up.
 - Bug-hunt pass (Oct 2026): 75 tests green on Linux (Swift 6.0.3). Core: stuck button/scroll on hand swap, unmatched mouse-up, real mouse taking over mid-drag, NaN/trap guards for imported settings and replay aspect. Mac (review only, not compiled): delegate lifetime + SIGINT/SIGTERM quit path, calibration window never closing, real mouse blocked during synthetic drag, camera fps exception, mirroring pinned off, kill hotkey with revoked camera, quit-time stray clicks, settings re-apply hitch, updater bundle name + commit/codesign verification, CI script injection, BSD-sed check.sh.

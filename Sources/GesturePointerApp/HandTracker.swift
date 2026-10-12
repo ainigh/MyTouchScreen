@@ -27,7 +27,7 @@ final class HandTracker {
     /// Observations below this confidence are discarded (ghost hands in clutter).
     var minimumObservationConfidence: Float = 0.35
     /// When > 0, frames arriving sooner than this after the last processed one are skipped.
-    /// Used in standby to watch for the engage palm at a few fps for near-zero CPU.
+    /// Used in standby to watch for the engage palms at a few fps for near-zero CPU.
     var minimumInterval: Double = 0
 
     init() {

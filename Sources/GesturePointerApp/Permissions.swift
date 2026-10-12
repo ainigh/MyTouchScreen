@@ -105,7 +105,7 @@ struct WelcomeView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Welcome to Wisp")
                         .font(.system(size: 22, weight: .semibold, design: .rounded))
-                    Text("Point at the screen. Hold still to click. Wiggle to scroll.")
+                    Text("Point at the screen. Rest, then wiggle to click or make a fist to drag. Two fists zoom and scroll.")
                         .foregroundStyle(.secondary)
                 }
             }
@@ -150,7 +150,7 @@ struct WelcomeView: View {
             }
 
             HStack {
-                Text("Engage: hold up an open palm, or press \(settings.hotkey.displayString)")
+                Text("Engage: hold up both open palms, or press \(settings.hotkey.displayString)")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                 Spacer()
