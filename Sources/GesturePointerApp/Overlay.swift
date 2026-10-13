@@ -108,8 +108,8 @@ final class OverlayView: NSView {
                     ringColor = Theme.idle
                 } else {
                     // Full while the cursor is held on a point (after a click, while a fist
-                    // forms, after a drop) until the hand settles.
-                    ringProgress = snapshot.isHeld ? 1 : 0
+                    // forms, after a drop) until the hand settles; filling toward a dwell click.
+                    ringProgress = snapshot.isHeld ? 1 : snapshot.clickProgress
                     ringColor = Theme.accent
                 }
             } else {

@@ -34,6 +34,10 @@ public struct PointerSnapshot: Equatable {
     public var pose: HandPose = .point
     public var outputSuppressed = false
     public var momentumActive = false
+    /// 0...1 toward a dwell click (the dwell click preset).
+    public var clickProgress: Double = 0
+    /// A zoom gesture is in progress.
+    public var isZooming = false
 
     public init() {}
 }
@@ -119,11 +123,23 @@ public final class PointerStateMachine {
     var cursorHistory: [(time: Double, point: Point2)] = []
     /// After a hold, the box-space offset that glides the cursor back under the fingertip.
     var glide: (offset: Point2, start: Double)?
-    /// A fist must be made with the hand seen open first: one held while engaging, or after the
-    /// real mouse interrupted a drag, never presses by itself.
-    var fistNeedsOpenHand = true
-    /// A fist being held toward a press: since when, and where it will press.
-    var pendingFist: (since: Double, point: Point2)?
+    /// The pointing hand's contacts (fist, pinches, thumb trigger). Each must be seen open
+    /// first: one held while engaging, or after the real mouse interrupted a drag, never presses
+    /// by itself.
+    var sensors: [HandContact: ContactSensor] = [:]
+    /// The other hand's pinch (pinch zoom presets).
+    var otherPinchSensor = ContactSensor()
+    /// The other hand shows the zoom preset's contact this frame.
+    var otherHandZoomContact = false
+    /// A contact being held toward a click or a press.
+    var pendingContact: PendingContact?
+    var lastContactRelease: Double = -.infinity
+    /// `fistToggle`: the fist has opened since it pressed, so the next fist drops.
+    var toggleOpenedSincePress = false
+    var dwell: DwellState?
+    /// While zooming: the last log zoom level sent.
+    var zoomMetric: Double?
+    var zoomSentBegin = false
     var shakeDetector: ShakeDetector
     var tipSpeed: Double = 0
     /// The newest frame-to-frame speed alone (no glitch protection), to hold the cursor for a
@@ -247,7 +263,7 @@ public final class PointerStateMachine {
         freeze = nil
         cursorHistory.removeAll()
         glide = nil
-        fistNeedsOpenHand = true
+        disarmContacts()
         if state == .dragging {
             // Our synthetic button is still down, so the real mouse would drag whatever the fist
             // grabbed. Let go where the real mouse is (never warp it back).
@@ -359,7 +375,7 @@ public final class PointerStateMachine {
             return StepOutput()
         }
         notBothPalmsSince = nil
-        let busy = state == .dragging
+        let busy = state == .dragging || zoomMetric != nil
         let still = max(palmSpeed, secondaryPalmSpeed) < config.palmStillnessNormalized
         guard !palmLatched, !busy, still else {
             palmHoldStart = nil
@@ -410,6 +426,7 @@ public final class PointerStateMachine {
             out.intents.append(.up(x: point.x, y: point.y))
             out.events.append(.dragEnded)
         }
+        out.append(endZoom())
         resetGestures()
         if isEngaged { state = .engaged }
         return out
@@ -420,8 +437,11 @@ public final class PointerStateMachine {
         freeze = nil
         cursorHistory.removeAll()
         glide = nil
-        fistNeedsOpenHand = true
-        pendingFist = nil
+        disarmContacts()
+        toggleOpenedSincePress = false
+        dwell = nil
+        zoomMetric = nil
+        zoomSentBegin = false
         warpOffset = .zero
         lastRawBox = nil
         recentTips.removeAll()
@@ -454,6 +474,8 @@ public final class PointerStateMachine {
         snapshot.displayID = router.current?.id
         snapshot.engageProgress = engageProgress(at: time)
         snapshot.isHeld = isEngaged && freeze != nil
+        snapshot.clickProgress = isEngaged ? dwellProgress(at: time) : 0
+        snapshot.isZooming = isEngaged && zoomMetric != nil
         snapshot.handAway = isEngaged && time - lastHandSeen > Self.handAwayAfter
         snapshot.displayJumpProgress = router.jumpProgress(at: time)
         snapshot.pose = primary.state.pose

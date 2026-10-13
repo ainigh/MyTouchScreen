@@ -18,7 +18,8 @@ protocol MenuBarActions: AnyObject {
     var isRecording: Bool { get }
     var cameras: [CameraInfo] { get }
     var selectedCameraID: String? { get }
-    var pointerResponse: PointerResponse { get }
+    /// The gesture settings, for the presets submenus.
+    var gestureConfig: GestureConfig { get }
     var showsPreview: Bool { get }
     var launchesAtLogin: Bool { get }
     var hotkeyDisplay: String { get }
@@ -29,7 +30,7 @@ protocol MenuBarActions: AnyObject {
     func toggleEnabled()
     func toggleEngaged()
     func selectCamera(_ id: String?)
-    func selectPointerResponse(_ response: PointerResponse)
+    func updateGestureConfig(_ change: (inout GestureConfig) -> Void)
     func startCalibration()
     func togglePreview()
     func toggleLaunchAtLogin()
@@ -40,6 +41,14 @@ protocol MenuBarActions: AnyObject {
     func installUpdate()
     func copyUpdateError()
     func quit()
+}
+
+/// One entry of a presets submenu.
+private struct PresetChoice {
+    var title: String
+    var tip: String
+    var tag: String
+    var isOn: Bool
 }
 
 @MainActor
@@ -123,17 +132,19 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         }
         cameraItem.submenu = cameraMenu
         menu.addItem(cameraItem)
-        let speedItem = NSMenuItem(title: "Cursor Speed", action: nil, keyEquivalent: "")
-        let speedMenu = NSMenu()
-        for response in PointerResponse.allCases {
-            let entry = item(response.title, #selector(selectPointerResponse(_:)))
-            entry.representedObject = response.rawValue
-            entry.toolTip = response.summary
-            entry.state = actions.pointerResponse == response ? .on : .off
-            speedMenu.addItem(entry)
-        }
-        speedItem.submenu = speedMenu
-        menu.addItem(speedItem)
+        let config = actions.gestureConfig
+        menu.addItem(presetMenu("Cursor Speed", PointerResponse.allCases.map {
+            PresetChoice(title: $0.title, tip: $0.summary, tag: "speed:" + $0.rawValue, isOn: config.pointerResponse == $0)
+        }))
+        menu.addItem(presetMenu("Click", ClickGesture.allCases.map {
+            PresetChoice(title: $0.title, tip: $0.summary, tag: "click:" + $0.rawValue, isOn: config.clickGesture == $0)
+        }))
+        menu.addItem(presetMenu("Drag", DragGesture.allCases.map {
+            PresetChoice(title: $0.title, tip: $0.summary, tag: "drag:" + $0.rawValue, isOn: config.dragGesture == $0)
+        }))
+        menu.addItem(presetMenu("Zoom", ZoomGesture.allCases.map {
+            PresetChoice(title: $0.title, tip: $0.summary, tag: "zoom:" + $0.rawValue, isOn: config.zoomGesture == $0)
+        }))
         menu.addItem(item("Calibrate This Display…", #selector(calibrate)))
         let preview = item("Show Camera Preview", #selector(togglePreview))
         preview.state = actions.showsPreview ? .on : .off
@@ -198,10 +209,37 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     @objc private func toggleEnabled() { actions?.toggleEnabled() }
     @objc private func toggleEngaged() { actions?.toggleEngaged() }
     @objc private func selectCamera(_ sender: NSMenuItem) { actions?.selectCamera(sender.representedObject as? String) }
-    @objc private func selectPointerResponse(_ sender: NSMenuItem) {
-        guard let raw = sender.representedObject as? String, let response = PointerResponse(rawValue: raw) else { return }
-        actions?.selectPointerResponse(response)
+    /// A preset submenu entry's tag is "kind:rawValue".
+    @objc private func selectPreset(_ sender: NSMenuItem) {
+        guard let tag = sender.representedObject as? String, let colon = tag.firstIndex(of: ":") else { return }
+        let kind = String(tag[..<colon])
+        let raw = String(tag[tag.index(after: colon)...])
+        actions?.updateGestureConfig { config in
+            switch kind {
+            case "speed": if let v = PointerResponse(rawValue: raw) { config.pointerResponse = v }
+            case "click": if let v = ClickGesture(rawValue: raw) { config.clickGesture = v }
+            case "drag": if let v = DragGesture(rawValue: raw) { config.dragGesture = v }
+            case "zoom": if let v = ZoomGesture(rawValue: raw) { config.zoomGesture = v }
+            default: break
+            }
+        }
     }
+
+    /// A submenu of mutually exclusive presets (the chosen one is checked).
+    private func presetMenu(_ title: String, _ choices: [PresetChoice]) -> NSMenuItem {
+        let parent = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        let submenu = NSMenu()
+        for choice in choices {
+            let entry = item(choice.title, #selector(selectPreset(_:)))
+            entry.representedObject = choice.tag
+            entry.toolTip = choice.tip
+            entry.state = choice.isOn ? .on : .off
+            submenu.addItem(entry)
+        }
+        parent.submenu = submenu
+        return parent
+    }
+
     @objc private func calibrate() { actions?.startCalibration() }
     @objc private func togglePreview() { actions?.togglePreview() }
     @objc private func toggleRecording() { actions?.toggleRecording() }

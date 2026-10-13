@@ -470,14 +470,18 @@ final class AppController: MenuBarActions {
     var isRecording: Bool { recordingURL != nil }
     var cameras: [CameraInfo] { Camera.availableCameras() }
     var selectedCameraID: String? { settings.cameraID }
-    var pointerResponse: PointerResponse { settings.config.pointerResponse }
+    var gestureConfig: GestureConfig { settings.config }
     var showsPreview: Bool { settings.showPreview }
     var launchesAtLogin: Bool {
         launchAtLogin.refresh()
         return launchAtLogin.isEnabled
     }
     var hotkeyDisplay: String { settings.hotkey.displayString }
-    var engagedHint: String { "point like a laser pointer; wiggle to click; fist to drag" }
+    var engagedHint: String {
+        let c = settings.config
+        return (["point like a laser pointer", c.clickGesture.hint, c.dragGesture.hint, c.zoomGesture.hint]
+            .filter { !$0.isEmpty }).joined(separator: "; ")
+    }
     var versionLine: String { updater.versionLine }
     var updateState: Updater.State { updater.state }
 
@@ -521,8 +525,10 @@ final class AppController: MenuBarActions {
         settings.cameraID = id
     }
 
-    func selectPointerResponse(_ response: PointerResponse) {
-        settings.config.pointerResponse = response
+    func updateGestureConfig(_ change: (inout GestureConfig) -> Void) {
+        var config = settings.config
+        change(&config)
+        settings.config = config
     }
 
     func startCalibration() {
