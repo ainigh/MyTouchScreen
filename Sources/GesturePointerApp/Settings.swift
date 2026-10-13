@@ -189,6 +189,8 @@ struct SettingsView: View {
         TabView {
             PointerSettings(settings: settings)
                 .tabItem { Label("Pointer", systemImage: "cursorarrow.rays") }
+            GestureSettings(settings: settings)
+                .tabItem { Label("Gestures", systemImage: "hand.tap") }
             CameraSettings(settings: settings, cameras: cameras, onCalibrate: onCalibrate)
                 .tabItem { Label("Camera", systemImage: "camera") }
             GeneralSettings(settings: settings, launchAtLogin: launchAtLogin,
@@ -230,7 +232,7 @@ private struct EndsSlider: View {
 private struct PointerSettings: View {
     @ObservedObject var settings: AppSettings
 
-    private let howItWorks = "Wisp is an invisible laser pointer: the cursor goes wherever your index finger points, at any speed, and holds still while your hand does. Wiggle your finger (left-right-left) to click there; wiggle twice for a double click. Make a fist and hold it a moment to grab and drag; open your hand to drop. Both open palms turn Wisp on and off."
+    private let howItWorks = "Wisp is an invisible laser pointer: the cursor goes wherever your index finger points, at any speed, and holds still while your hand does. How you click, drag and zoom is chosen in the Gestures tab. Both open palms turn Wisp on and off."
 
     var body: some View {
         Form {
@@ -264,6 +266,55 @@ private struct PointerSettings: View {
                     Toggle("Stay on the display the mouse is on when Wisp turns on", isOn: $settings.config.stayOnEngagedDisplay)
                     Text("Off: hold the cursor against an edge to move to the next display.")
                         .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+        }
+        .formStyle(.grouped)
+    }
+}
+
+/// One choice per gesture (click, drag, zoom): radio buttons, so exactly one is active.
+@MainActor
+private struct GestureSettings: View {
+    @ObservedObject var settings: AppSettings
+
+    var body: some View {
+        Form {
+            Section("Click") {
+                Picker("Click", selection: $settings.config.clickGesture) {
+                    ForEach(ClickGesture.allCases, id: \.self) { Text($0.title).tag($0) }
+                }
+                .pickerStyle(.radioGroup)
+                .labelsHidden()
+                Text(settings.config.clickGesture.summary).font(.caption).foregroundStyle(.secondary)
+            }
+            Section("Drag and drop") {
+                Picker("Drag", selection: $settings.config.dragGesture) {
+                    ForEach(DragGesture.allCases, id: \.self) { Text($0.title).tag($0) }
+                }
+                .pickerStyle(.radioGroup)
+                .labelsHidden()
+                Text(settings.config.dragGesture.summary).font(.caption).foregroundStyle(.secondary)
+            }
+            Section("Zoom") {
+                Picker("Zoom", selection: $settings.config.zoomGesture) {
+                    ForEach(ZoomGesture.allCases, id: \.self) { Text($0.title).tag($0) }
+                }
+                .pickerStyle(.radioGroup)
+                .labelsHidden()
+                Text(settings.config.zoomGesture.summary).font(.caption).foregroundStyle(.secondary)
+                if settings.config.zoomGesture != .off {
+                    Picker("Send zoom as", selection: $settings.zoomStyle) {
+                        ForEach(ZoomStyle.allCases, id: \.self) { Text($0.label).tag($0) }
+                    }
+                }
+            }
+            Section {
+                Button("Reset Gestures to Defaults") {
+                    let defaults = GestureConfig()
+                    settings.config.clickGesture = defaults.clickGesture
+                    settings.config.dragGesture = defaults.dragGesture
+                    settings.config.zoomGesture = defaults.zoomGesture
                 }
             }
         }

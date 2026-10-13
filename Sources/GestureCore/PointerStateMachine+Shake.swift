@@ -82,8 +82,7 @@ extension PointerStateMachine {
             return out
         }
         updateTipSpeed(hand, at: time)
-        let isFist = primary.state.pose == .fist
-        if !isFist && primary.observedPose != .fist { fistNeedsOpenHand = false }
+        updateContactSensors(other: other, at: time)
 
         if bothPalmsOpen && state == .hover {
             // Two open palms are the engage / disengage gesture: hold the cursor where it is.
@@ -93,35 +92,36 @@ extension PointerStateMachine {
             return out
         }
 
-        if state == .dragging && !isFist {
+        if let zoomed = updateZoom(hand, other: other, at: time, suppressed: suppressed) {
+            return zoomed
+        }
+
+        if state == .dragging && dragReleased() {
             out.append(drop(at: time))
             return out
         }
 
-        if state == .hover && isFist && !fistNeedsOpenHand {
-            // Hold the cursor where it was before the hand closed; press once the fist has been
-            // held a moment (a fist that flickers for a few frames while moving never presses).
-            let pending = pendingFist ?? (time, freeze?.point ?? cursorPoint(at: time - config.poseConfirmDuration - Self.fistLookback))
-            pendingFist = pending
-            freezeCursor(at: pending.point)
-            if time - pending.since >= config.shake.fistHoldTime {
-                out.append(press(hand, at: pending.point, time: time, suppressed: suppressed))
-            } else {
-                out.append(emitMove(pending.point, suppressed: suppressed))
-            }
-            return out
+        if state == .hover, let held = updatePendingContact(hand, at: time, suppressed: suppressed) {
+            return held
         }
-        pendingFist = nil
 
         out.append(updateCursor(hand, at: time, suppressed: suppressed))
 
-        // Wiggles click only with the button up (mid-drag they are just motion).
-        if state == .hover, let sample = medianTip(),
-           let wiggle = shakeDetector.update(point: sample.point, handSize: hand.handSize, at: sample.time) {
-            let point = freeze?.point ?? wiggleClickPoint(wiggle)
-            freezeCursor(at: point, fresh: true)
-            out.append(emitMove(point, suppressed: suppressed))
-            if !suppressed { out.append(wiggleClick(at: point, time: time)) }
+        guard state == .hover else { return out }
+        switch config.clickGesture {
+        case .wiggle:
+            // Wiggles click only with the button up (mid-drag they are just motion).
+            if let sample = medianTip(),
+               let wiggle = shakeDetector.update(point: sample.point, handSize: hand.handSize, at: sample.time) {
+                let point = freeze?.point ?? wiggleClickPoint(wiggle)
+                freezeCursor(at: point, fresh: true)
+                out.append(emitMove(point, suppressed: suppressed))
+                if !suppressed { out.append(click(at: point, time: time, window: config.shake.doubleClickWindow)) }
+            }
+        case .dwell:
+            out.append(updateDwell(at: time, suppressed: suppressed))
+        case .pinch, .middlePinch, .thumbTrigger, .quickFist:
+            break
         }
         return out
     }
@@ -281,11 +281,13 @@ extension PointerStateMachine {
 
     // MARK: Click
 
-    private func wiggleClick(at point: Point2, time: Double) -> StepOutput {
+    /// Clicks at `point`; a click within `window` of the last one at the same spot is a double
+    /// (or triple) click.
+    func click(at point: Point2, time: Double, window: Double) -> StepOutput {
         var count = 1
         var point = point
         let radius = (router.current?.frame.width ?? 1500) * config.shake.doubleClickRadiusBox
-        if let last = lastClick, time - last.time <= config.shake.doubleClickWindow,
+        if let last = lastClick, time - last.time <= window,
            last.point.distance(to: point) <= radius {
             // Same spot: click exactly where the first one landed, as a double click must.
             count = min(last.count + 1, 3)
@@ -298,9 +300,11 @@ extension PointerStateMachine {
     // MARK: Drag
 
     /// The hand closed into a fist: press where the cursor was before it closed.
-    private func press(_ hand: HandFrame, at point: Point2, time: Double, suppressed: Bool) -> StepOutput {
+    func press(_ hand: HandFrame, at point: Point2, time: Double, suppressed: Bool) -> StepOutput {
         var out = StepOutput()
-        pendingFist = nil
+        pendingContact = nil
+        toggleOpenedSincePress = false
+        dwell = nil
         state = .dragging
         shakeDetector.reset()
         if !suppressed {
@@ -323,7 +327,7 @@ extension PointerStateMachine {
 
     /// The fist opened: release where the cursor is and hold it there until the hand settles,
     /// so opening the hand (which swings the fingertip back out) doesn't move it.
-    private func drop(at time: Double) -> StepOutput {
+    func drop(at time: Double) -> StepOutput {
         let point = freeze?.point ?? lastEmittedCursor ?? cursor ?? .zero
         var out = StepOutput()
         if buttonDown {

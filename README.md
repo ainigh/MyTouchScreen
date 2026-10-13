@@ -135,9 +135,21 @@ unlocks it and it catches up exactly with your finger.
 | right | **open** the fist | Drop where the cursor is |
 | both | **open palms**, held still | Engage / disengage |
 
-Notes: engaging never clicks by itself, and resting never clicks — **only a wiggle does**:
-pinches, single taps and hovering never click. A fist that flickers for a moment while you
-move doesn't start a drag. There's no right click, scroll or zoom. With two monitors the
+That table is the default. **Settings → Gestures** (or the menu bar's Click / Drag / Zoom /
+Cursor Speed submenus) switches between presets, exactly one of each at a time:
+
+- **Click:** wiggle · pinch (thumb + index) · middle pinch (thumb + middle) · thumb trigger
+  (finger gun) · quick fist · dwell (hold still; the ring fills, then it clicks).
+- **Drag:** hold a fist · fist to grab, fist to drop · hold a pinch · hold a middle pinch ·
+  hold the thumb trigger · off. When click and drag share a hand shape, a quick one clicks
+  and a held one drags.
+- **Zoom** (sent as ⌘+/⌘− or ⌘-scroll): off · two fists pulled apart · two pinches pulled apart ·
+  the other hand's fist raised / lowered · the other hand's pinch raised / lowered.
+- **Cursor speed:** direct (1:1) and eight speed-dependent gains (see `PointerResponse`).
+
+Notes for the defaults: engaging never clicks by itself, and resting never clicks — **only a
+wiggle does**: pinches, single taps and hovering never click. A fist that flickers for a moment while you
+move doesn't start a drag. There's no right click or scroll, and zoom is off unless you pick a zoom preset. With two monitors the
 cursor stays on the monitor the mouse pointer was on when Wisp engaged (Settings → Pointer).
 Wiggling the index finger works as well as wiggling the whole hand. Wisp stays on while your
 hand is out of view (it just watches at a lower frame rate until the hand is back); only the

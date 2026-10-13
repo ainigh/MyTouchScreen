@@ -9,6 +9,13 @@ public struct GestureConfig: Equatable, Codable {
     /// Lock, wiggle click, fist drag and two-fist thresholds.
     public var shake = ShakeParams()
 
+    // Gesture presets: which hand shape clicks, drags and zooms (exactly one of each).
+    public var clickGesture: ClickGesture = .wiggle
+    public var dragGesture: DragGesture = .fistHold
+    public var zoomGesture: ZoomGesture = .off
+    /// Pinch / thumb-trigger / dwell / zoom thresholds for those presets.
+    public var contact = ContactParams()
+
     // Pointer filtering. The cursor is a laser pointer: it goes exactly where the fingertip
     // points (through the calibration), at every speed. These only decide how much tracker
     // jitter is smoothed away; `steadiness` sets all of them from one slider.
