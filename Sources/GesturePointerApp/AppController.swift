@@ -515,7 +515,8 @@ final class AppController: MenuBarActions {
     var hotkeyDisplay: String { settings.hotkey.displayString }
     var engagedHint: String {
         let c = settings.config
-        return (["point like a laser pointer", c.clickGesture.hint, c.dragGesture.hint, c.zoomGesture.hint]
+        let point = c.trajectory == .straight ? "point (straight lines)" : "point like a laser pointer"
+        return ([point, c.clickGesture.hint, c.dragGesture.hint, c.zoomGesture.hint]
             .filter { !$0.isEmpty }).joined(separator: "; ")
     }
     var versionLine: String { updater.versionLine }

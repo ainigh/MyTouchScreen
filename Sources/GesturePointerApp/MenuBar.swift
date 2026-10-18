@@ -133,6 +133,9 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         cameraItem.submenu = cameraMenu
         menu.addItem(cameraItem)
         let config = actions.gestureConfig
+        menu.addItem(presetMenu("Trajectory", Trajectory.allCases.map {
+            PresetChoice(title: $0.title, tip: $0.summary, tag: "trajectory:" + $0.rawValue, isOn: config.trajectory == $0)
+        }))
         menu.addItem(presetMenu("Cursor Speed", PointerResponse.allCases.map {
             PresetChoice(title: $0.title, tip: $0.summary, tag: "speed:" + $0.rawValue, isOn: config.pointerResponse == $0)
         }))
@@ -220,6 +223,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         let raw = String(tag[tag.index(after: colon)...])
         actions?.updateGestureConfig { config in
             switch kind {
+            case "trajectory": if let v = Trajectory(rawValue: raw) { config.trajectory = v }
             case "speed": if let v = PointerResponse(rawValue: raw) { config.pointerResponse = v }
             case "click": if let v = ClickGesture(rawValue: raw) { config.clickGesture = v }
             case "drag": if let v = DragGesture(rawValue: raw) { config.dragGesture = v }

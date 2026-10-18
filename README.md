@@ -145,6 +145,13 @@ Cursor Speed submenus) switches between presets, exactly one of each at a time:
   and a held one drags.
 - **Zoom** (sent as ⌘+/⌘− or ⌘-scroll): off · two fists pulled apart · two pinches pulled apart ·
   the other hand's fist raised / lowered · the other hand's pinch raised / lowered.
+- **Trajectory** (default: straight lines; Settings → Pointer or menu → *Trajectory*): the
+  cursor moves only horizontally or only vertically, whichever way your hand mostly goes, so a
+  wavy sideways sweep draws a straight horizontal line and an up-down curve a straight vertical
+  one. It switches direction only on a sharp turn (*Turn needed to change direction*, Gentle ↔
+  Sharp). To go diagonally, go across then turn. Motion dropped across the line is made up as you
+  keep moving, so the cursor drifts back under your finger. *Free* follows the hand in any
+  direction. Applies to every cursor speed, target assist and drags.
 - **Cursor speed:** direct (1:1) and eight speed-dependent gains (see `PointerResponse`).
 - **Target assist** (on by default; menu → *Target Assist*, tuned in Settings → Targets): near a
   button, link, menu, checkbox or text field the cursor slows down, so the same hand movement
@@ -184,7 +191,8 @@ Left-handed? Settings → Pointer → *Pointing hand: Left* swaps the roles.
 
 Menu bar → *Settings…*
 
-- **Pointer:** a short "how it works", then three things. *Steadiness* (Snappy ↔ Steady): move
+- **Pointer:** a short "how it works"; *Trajectory* (straight lines or free, and how sharp a turn
+  switches direction); then three things. *Steadiness* (Snappy ↔ Steady): move
   it toward Steady if the cursor shivers while your hand is still, toward Snappy if it trails
   behind your finger. *Hand movement to cover the screen* (Less ↔ More). *Pointing hand*. With
   more than one display, *Stay on the display the mouse is on when Wisp turns on*.
@@ -210,6 +218,7 @@ frame rate and Vision's speed for 5 seconds, and lists anything wrong.
 |---|---|
 | Halo moves but nothing clicks or moves | Accessibility isn't granted to *this build* of GesturePointer.app. Menu → *Setup & Permissions…* → *Open Accessibility Settings* (it clears the stale entry), then turn GesturePointer on. |
 | Menu-bar icon shows a warning triangle | A permission is missing: menu → *Setup & Permissions…* |
+| Cursor won't go diagonally / turns when you don't mean it to | That's the straight-line trajectory. Settings → Pointer → *Turn needed to change direction*: toward Gentle to switch more easily, toward Sharp to switch less; or pick *Free*. |
 | Cursor feels sticky or gets pulled where you don't want | Settings → Targets: lower *Slow down on targets* or *Magnet*, or untick the kind of control that gets in the way (or menu → *Target Assist* to switch it off). |
 | Target assist does nothing in an app | Turn on *Outline every target found* (Settings → Targets): if nothing is outlined, that app doesn't expose its controls to Accessibility (some games, canvases and Java apps). Chrome/Electron apps are asked to expose them, which can take a second the first time. |
 | Cursor shivers while your hand is still | Better light on your hand; Settings → Pointer → move *Steadiness* toward Steady. |

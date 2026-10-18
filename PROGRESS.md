@@ -138,6 +138,13 @@ Resume from the first unchecked item. Tick only after verification per `CLAUDE.m
 - [x] README + DECISIONS; Linux build + tests + check.sh green
 - [x] Committed
 
+## Straight-line trajectory (owner request)
+- [x] `TrajectoryLock` in GestureCore: dominant-axis pick from rest, switch only on a sharp turn (setting), catch-up with hand motion only; applies to every speed preset, target assist and drags; default `.straight`
+- [x] No glide after a hold in straight mode (it moved a still cursor)
+- [x] Tests (136): straight-line cases + machine path; laser-pointer tests pinned to `.free`; owner recording replays with identical click/drag timing
+- [x] Mac: Settings → Pointer → Trajectory (radio + turn slider), menu → Trajectory submenu, engaged hint; README + DECISIONS
+- [x] Committed
+
 ## Owner handoff (for the human, after Claude is done)
 1. `xcode-select --install` if not already done.
 2. `make app && make run`.

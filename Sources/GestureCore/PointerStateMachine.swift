@@ -82,7 +82,9 @@ public final class PointerStateMachine {
     private var mapperDisplayID: String?
     var router: DisplayRouter
     var smoother: PointerSmoother
-    /// Slowdown and magnet near clickable things, after the smoother (screen points).
+    /// Horizontal-or-vertical paths, after the smoother (screen points).
+    var trajectoryLock = TrajectoryLock()
+    /// Slowdown and magnet near clickable things, after the trajectory (screen points).
     var assist: TargetAssist
     var momentum: ScrollMomentum
 
@@ -268,6 +270,7 @@ public final class PointerStateMachine {
         // A held hand cursor is stale once the real mouse has moved; start over from the hand.
         freeze = nil
         assist.reset()
+        trajectoryLock.reset()
         cursorHistory.removeAll()
         glide = nil
         disarmContacts()
@@ -455,6 +458,7 @@ public final class PointerStateMachine {
         recentTips.removeAll()
         latestTipSpeed = 0
         assist.reset()
+        trajectoryLock.reset()
     }
 
     // MARK: Cursor helpers
