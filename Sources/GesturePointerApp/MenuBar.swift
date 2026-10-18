@@ -136,6 +136,10 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         menu.addItem(presetMenu("Cursor Speed", PointerResponse.allCases.map {
             PresetChoice(title: $0.title, tip: $0.summary, tag: "speed:" + $0.rawValue, isOn: config.pointerResponse == $0)
         }))
+        let assist = item("Target Assist", #selector(toggleTargetAssist))
+        assist.state = config.assist.enabled ? .on : .off
+        assist.toolTip = "Slow down near buttons and links, and pull a stopping cursor onto them. Tune it in Settings → Targets."
+        menu.addItem(assist)
         menu.addItem(presetMenu("Click", ClickGesture.allCases.map {
             PresetChoice(title: $0.title, tip: $0.summary, tag: "click:" + $0.rawValue, isOn: config.clickGesture == $0)
         }))
@@ -240,6 +244,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         return parent
     }
 
+    @objc private func toggleTargetAssist() { actions?.updateGestureConfig { $0.assist.enabled.toggle() } }
     @objc private func calibrate() { actions?.startCalibration() }
     @objc private func togglePreview() { actions?.togglePreview() }
     @objc private func toggleRecording() { actions?.toggleRecording() }

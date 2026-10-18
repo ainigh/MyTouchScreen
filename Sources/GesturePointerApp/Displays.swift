@@ -46,6 +46,11 @@ enum Displays {
         NSPoint(x: p.x, y: primaryHeight - p.y)
     }
 
+    /// A global (top-left origin) rect in Cocoa screen space.
+    static func cocoaRect(fromGlobal r: CGRect) -> NSRect {
+        NSRect(x: r.minX, y: primaryHeight - r.maxY, width: r.width, height: r.height)
+    }
+
     static func globalPoint(fromCocoa p: NSPoint) -> CGPoint {
         CGPoint(x: p.x, y: primaryHeight - p.y)
     }

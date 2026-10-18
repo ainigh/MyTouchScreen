@@ -4,8 +4,8 @@ import GestureCore
 import QuartzCore
 
 /// One transparent, click-through window per screen, above everything, drawing the cursor halo,
-/// the hold and engage rings, the click ripple, the display-jump edge glow, toasts and the
-/// standby glyph.
+/// the hold and engage rings, the click ripple, the display-jump edge glow, toasts, the standby
+/// glyph and target assist's outlines.
 ///
 /// All methods are main-thread only. Updates arrive at camera rate; layer changes that track
 /// the hand are made without implicit animations (they would add ~250 ms of visual lag).
@@ -13,6 +13,13 @@ import QuartzCore
 final class OverlayController {
     private var windows: [(screen: NSScreen, window: NSWindow, view: OverlayView)] = []
     var showStatusGlyph = true
+    /// Outline the target the cursor is drawn to.
+    var highlightsTarget = true
+    /// Faintly outline every target found; takes effect with the next `showTargets`.
+    var outlinesTargets = false {
+        didSet { if outlinesTargets != oldValue { showTargets(targets) } }
+    }
+    private var targets: [AssistTarget] = []
 
     init() {
         rebuild()
@@ -36,6 +43,7 @@ final class OverlayController {
             window.orderFrontRegardless()
             return (screen, window, view)
         }
+        showTargets(targets)
     }
 
     func close() {
@@ -67,7 +75,30 @@ final class OverlayController {
                 ? (status == .needsPermission ? Theme.warning : (status == .off ? nil : Theme.idle))
                 : nil
             entry.view.render(halo: halo, glyph: glyph, edgeProgress: halo != nil ? snapshot.displayJumpProgress : 0)
+            var focus: (rect: NSRect, strength: Double)?
+            if highlightsTarget, let assist = snapshot.assistFocus {
+                focus = (local(assist.target.frame, on: entry.screen), assist.strength)
+            }
+            entry.view.renderFocus(focus)
         }
+    }
+
+    /// Every target found around the pointer (target assist), outlined faintly while
+    /// `outlinesTargets` is on.
+    func showTargets(_ targets: [AssistTarget]) {
+        self.targets = targets
+        for entry in windows {
+            let rects = outlinesTargets
+                ? targets.map { local($0.frame, on: entry.screen) }.filter { entry.view.bounds.intersects($0) }
+                : []
+            entry.view.renderTargets(rects)
+        }
+    }
+
+    /// A global target frame in the coordinates of `screen`'s overlay view.
+    private func local(_ frame: GestureCore.Rect, on screen: NSScreen) -> NSRect {
+        let cocoa = Displays.cocoaRect(fromGlobal: CGRect(x: frame.x, y: frame.y, width: frame.width, height: frame.height))
+        return cocoa.offsetBy(dx: -screen.frame.minX, dy: -screen.frame.minY)
     }
 
     /// A ripple where a wiggle clicked (a second ring for a double click), so the click is seen
@@ -123,6 +154,8 @@ final class OverlayView: NSView {
     }
 
     private let halo = HaloLayer()
+    private let focusOutline = CAShapeLayer()
+    private let targetOutlines = CAShapeLayer()
     private let glyph = CAShapeLayer()
     private let edgeGlow = CAGradientLayer()
     private let toastView = ToastView()
@@ -133,6 +166,22 @@ final class OverlayView: NSView {
         layer?.backgroundColor = NSColor.clear.cgColor
         halo.isHidden = true
         layer?.addSublayer(edgeGlow)
+
+        targetOutlines.fillColor = nil
+        targetOutlines.strokeColor = Theme.idle.withAlphaComponent(0.45).cgColor
+        targetOutlines.lineWidth = 1
+        layer?.addSublayer(targetOutlines)
+
+        focusOutline.fillColor = Theme.accent.withAlphaComponent(0.08).cgColor
+        focusOutline.strokeColor = Theme.accent.cgColor
+        focusOutline.lineWidth = 2
+        focusOutline.shadowColor = Theme.accent.cgColor
+        focusOutline.shadowOpacity = 0.6
+        focusOutline.shadowRadius = 4
+        focusOutline.shadowOffset = .zero
+        focusOutline.isHidden = true
+        layer?.addSublayer(focusOutline)
+
         layer?.addSublayer(halo)
 
         let glyphSize: CGFloat = 8
@@ -178,6 +227,40 @@ final class OverlayView: NSView {
             edgeGlow.opacity = Float(edgeProgress)
         } else {
             edgeGlow.opacity = 0
+        }
+        CATransaction.commit()
+    }
+
+    /// A soft rounded outline around the control target assist is drawing the cursor to, more
+    /// visible the stronger the pull.
+    func renderFocus(_ focus: (rect: NSRect, strength: Double)?) {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        if let focus, focus.strength > 0.05 {
+            let rect = focus.rect.insetBy(dx: -3, dy: -3)
+            let radius = min(7, rect.height / 2, rect.width / 2)
+            focusOutline.path = CGPath(roundedRect: rect, cornerWidth: radius, cornerHeight: radius, transform: nil)
+            focusOutline.opacity = Float(0.25 + 0.75 * min(focus.strength, 1))
+            focusOutline.isHidden = false
+        } else {
+            focusOutline.isHidden = true
+        }
+        CATransaction.commit()
+    }
+
+    /// Thin outlines around every target found (tuning aid).
+    func renderTargets(_ rects: [NSRect]) {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        if rects.isEmpty {
+            targetOutlines.path = nil
+        } else {
+            let path = CGMutablePath()
+            for rect in rects {
+                let radius = min(4, rect.height / 2, rect.width / 2)
+                path.addRoundedRect(in: rect.insetBy(dx: -1, dy: -1), cornerWidth: radius, cornerHeight: radius)
+            }
+            targetOutlines.path = path
         }
         CATransaction.commit()
     }

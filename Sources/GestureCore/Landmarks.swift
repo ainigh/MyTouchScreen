@@ -101,10 +101,15 @@ public struct HandFrame: Equatable {
 public struct TrackingFrame: Equatable {
     public var timestamp: Double
     public var hands: [HandFrame]
+    /// The clickable things around the pointer, set only on frames where they changed since the
+    /// last frame (the app scans a few times a second). Kept in the frame so a recording replays
+    /// target assist exactly as it ran.
+    public var targets: [AssistTarget]?
 
-    public init(timestamp: Double, hands: [HandFrame]) {
+    public init(timestamp: Double, hands: [HandFrame], targets: [AssistTarget]? = nil) {
         self.timestamp = timestamp
         self.hands = hands
+        self.targets = targets
     }
 }
 

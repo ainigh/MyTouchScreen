@@ -168,6 +168,7 @@ extension PointerStateMachine {
                 }
             } else {
                 freeze = held
+                assist.reset()
                 cursor = held.point
                 // Kept in the history: a wiggle that starts while the cursor is held (a double
                 // click) clicks right here.
@@ -193,10 +194,19 @@ extension PointerStateMachine {
             box = mapper.boxPoint(fromCamera: trackedPoint(hand))
             lastRawBox = box
             smoother.reset(to: box, at: time)
+            assist.reset()
             out.events.append(.displayChanged(jumped.id))
         }
         guard let display = router.current else { return out }
-        let screen = ActiveBoxMapper.screenPoint(fromBox: smoother.process(box, at: time), on: display)
+        let finger = ActiveBoxMapper.screenPoint(fromBox: smoother.process(box, at: time), on: display)
+        let screen: Point2
+        if state == .dragging {
+            // A drag follows the fist as is: being pulled onto controls would drop things wrong.
+            assist.reset()
+            screen = finger
+        } else {
+            screen = assist.process(finger: finger, at: time, bounds: display.frame)
+        }
         cursor = screen
         out.append(emitMove(screen, suppressed: suppressed))
         remember(lastEmittedCursor ?? screen, at: time)
@@ -294,6 +304,7 @@ extension PointerStateMachine {
             point = last.point
         }
         lastClick = (time, point, count)
+        assist.noteClick(at: point, time: time)
         return StepOutput(intents: [.click(x: point.x, y: point.y, count: count)], events: [.clicked(count: count)])
     }
 

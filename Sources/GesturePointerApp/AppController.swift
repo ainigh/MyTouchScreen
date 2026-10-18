@@ -27,6 +27,8 @@ final class AppController: MenuBarActions {
     private let hotkey = GlobalHotkey()
     private let permissionMonitor = PermissionMonitor()
     private let updater = Updater()
+    private var targetScanner: TargetScanner!
+    private var scanningTargets = false
     private let launchAtLogin = LaunchAtLoginModel()
     private var userCheckedForUpdates = false
     private var announcedUpdate: UpdatePlan?
@@ -62,6 +64,7 @@ final class AppController: MenuBarActions {
         self.settings = settings
         pipeline = GesturePipeline(config: settings.config, displays: Displays.current(),
                                    calibration: settings.calibration, synth: InputSynth())
+        targetScanner = TargetScanner(onTargets: Self.makeTargetHandler(pipeline: pipeline, controller: self))
     }
 
     // MARK: Lifecycle
@@ -148,6 +151,7 @@ final class AppController: MenuBarActions {
     }
 
     func shutdown() {
+        targetScanner.stop()
         pipeline.shutdown()
         camera.stop()
         hotkey.unregister()
@@ -161,6 +165,18 @@ final class AppController: MenuBarActions {
         return { sampleBuffer in
             if let frame = tracker.process(sampleBuffer, timestamp: CACurrentMediaTime()) {
                 pipeline.submit(frame)
+            }
+        }
+    }
+
+    /// Built outside the main actor on purpose, like the frame handler: it runs on the target
+    /// scanner's queue. The pipeline gets the targets directly; the overlay's outlines hop to main.
+    nonisolated private static func makeTargetHandler(pipeline: GesturePipeline,
+                                                      controller: AppController) -> ([AssistTarget]) -> Void {
+        return { [weak controller] targets in
+            pipeline.update(targets: targets)
+            DispatchQueue.main.async { [weak controller] in
+                MainActor.assumeIsolated { controller?.overlay?.showTargets(targets) }
             }
         }
     }
@@ -192,6 +208,8 @@ final class AppController: MenuBarActions {
         }
         sounds.enabled = settings.soundsEnabled
         overlay?.showStatusGlyph = settings.showStatusGlyph
+        overlay?.highlightsTarget = settings.highlightTarget
+        overlay?.outlinesTargets = settings.outlineTargets
 
         if registeredHotkey != settings.hotkey {
             if hotkey.register(settings.hotkey) {
@@ -217,7 +235,22 @@ final class AppController: MenuBarActions {
         }
         updatePreview()
         updateCameraMode()
+        updateTargetScanner()
         updateStatus()
+    }
+
+    /// Target assist looks at the screen only while it can matter: engaged, switched on, with
+    /// Accessibility granted, and not replaying or calibrating.
+    private func updateTargetScanner() {
+        let assist = settings.config.assist
+        let wanted = engaged && axGranted && assist.enabled && !assist.kinds.isEmpty
+            && options.replayPath == nil && calibration == nil
+        if wanted {
+            targetScanner.start(kinds: assist.kinds)
+        } else if scanningTargets {
+            targetScanner.stop()
+        }
+        scanningTargets = wanted
     }
 
     private func updatePreview() {
@@ -297,12 +330,14 @@ final class AppController: MenuBarActions {
             }
             installMouseMonitor()
             updateCameraMode()
+            updateTargetScanner()
         case .disengaged:
             engaged = false
             sounds.play(.disengage)
             overlay?.toast("Standing by", symbol: "hand.raised", tint: Theme.idle)
             removeMouseMonitor()
             updateCameraMode()
+            updateTargetScanner()
         case .clicked(let count):
             sounds.play(.click)
             if let cursor = snapshot.cursor { overlay?.flashClick(at: cursor, count: count) }
@@ -367,6 +402,7 @@ final class AppController: MenuBarActions {
                 Permissions.noteAccessibilityGranted()
                 overlay?.toast("Accessibility granted", symbol: "checkmark.circle.fill")
             }
+            updateTargetScanner()
         }
         // The system scroll direction may have changed in System Settings.
         pushConfigIfChanged()

@@ -18,6 +18,11 @@ final class GesturePipeline {
     private var recorder: RecordingWriter?
     private var tickTimer: DispatchSourceTimer?
     private var frameTap: ((TrackingFrame) -> Void)?
+    /// Targets from the scanner, waiting to ride along with the next frame (so a recording
+    /// captures them where they changed). Pipeline queue only.
+    private var pendingTargets: [AssistTarget]?
+    /// The latest targets, so a recording started mid-session begins with them.
+    private var currentTargets: [AssistTarget] = []
 
     /// Print one line per frame (`--no-overlay` headless mode). Pipeline queue only.
     private var printsFrames = false
@@ -93,6 +98,14 @@ final class GesturePipeline {
         }
     }
 
+    /// New clickable targets around the pointer (target assist), from any thread.
+    func update(targets: [AssistTarget]) {
+        queue.async {
+            self.pendingTargets = targets
+            self.currentTargets = targets
+        }
+    }
+
     func update(displays: [DisplayInfo]) {
         queue.async { self.machine.setDisplays(displays) }
     }
@@ -111,6 +124,8 @@ final class GesturePipeline {
         queue.async {
             self.recorder?.close()
             self.recorder = writer
+            // The first recorded frame carries the targets already in play.
+            self.pendingTargets = self.currentTargets
         }
     }
 
@@ -143,7 +158,12 @@ final class GesturePipeline {
 
     // MARK: Queue-confined work
 
-    private func handle(_ frame: TrackingFrame) {
+    private func handle(_ incoming: TrackingFrame) {
+        var frame = incoming
+        if frameTap == nil, let targets = pendingTargets {
+            frame.targets = targets
+            pendingTargets = nil
+        }
         recorder?.append(frame)
         if !machine.isEngaged, let mouse = CGEvent(source: nil)?.location {
             // A palm engage starts on the display the mouse pointer is on.

@@ -32,6 +32,8 @@ public struct GestureConfig: Equatable, Codable {
     public var edgeOvershoot = 0.04
     /// Cursor speed vs hand speed (presets to try). `.direct` is the laser pointer.
     public var pointerResponse: PointerResponse = .direct
+    /// Slow down near, and pull into, the buttons and links the hand is reaching for.
+    public var assist = TargetAssistParams()
 
     // Poses
     public var curlExtendedRatio = 1.45
