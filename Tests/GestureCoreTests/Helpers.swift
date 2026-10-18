@@ -27,7 +27,17 @@ func drive(_ machine: PointerStateMachine, _ frames: [TrackingFrame], tickRate: 
     return out
 }
 
-func engagedMachine(_ config: GestureConfig = GestureConfig(), displays: [DisplayInfo] = [testDisplay]) -> PointerStateMachine {
+extension GestureConfig {
+    /// The defaults with fist steering off: the fist drags (and fist presets work), which is
+    /// what most gesture tests describe. Fist steering has its own tests.
+    static var classic: GestureConfig {
+        var c = GestureConfig()
+        c.fistSteering = false
+        return c
+    }
+}
+
+func engagedMachine(_ config: GestureConfig = .classic, displays: [DisplayInfo] = [testDisplay]) -> PointerStateMachine {
     let machine = PointerStateMachine(config: config, displays: displays)
     _ = machine.setEngaged(true, reason: .hotkey, at: 0)
     return machine

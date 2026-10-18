@@ -133,6 +133,10 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         cameraItem.submenu = cameraMenu
         menu.addItem(cameraItem)
         let config = actions.gestureConfig
+        let steering = item("Fist Steering", #selector(toggleFistSteering))
+        steering.state = config.fistSteering ? .on : .off
+        steering.toolTip = "Open hand moves the cursor up and down, a thumb-up fist left and right. The thumb is the button: tuck and lift to click, grip and pull to scroll, grip and hold to drag."
+        menu.addItem(steering)
         menu.addItem(presetMenu("Trajectory", Trajectory.allCases.map {
             PresetChoice(title: $0.title, tip: $0.summary, tag: "trajectory:" + $0.rawValue, isOn: config.trajectory == $0)
         }))
@@ -248,6 +252,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         return parent
     }
 
+    @objc private func toggleFistSteering() { actions?.updateGestureConfig { $0.fistSteering.toggle() } }
     @objc private func toggleTargetAssist() { actions?.updateGestureConfig { $0.assist.enabled.toggle() } }
     @objc private func calibrate() { actions?.startCalibration() }
     @objc private func togglePreview() { actions?.togglePreview() }

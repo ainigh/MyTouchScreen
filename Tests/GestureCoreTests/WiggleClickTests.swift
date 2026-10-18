@@ -5,9 +5,10 @@ import XCTest
 /// wiggle clicks where it began, a fist drags (open it to drop), two open palms toggle engagement.
 final class WiggleClickTests: XCTestCase {
     /// The laser pointer: these check that the cursor lands exactly where the finger points, so
-    /// they run with the free trajectory (straight lines are covered in TrajectoryLockTests).
+    /// they run with the free trajectory and the fist dragging (straight lines and fist steering
+    /// are covered in TrajectoryLockTests and FistSteeringTests).
     private let config: GestureConfig = {
-        var c = GestureConfig()
+        var c = GestureConfig.classic
         c.trajectory = .free
         return c
     }()
@@ -357,6 +358,7 @@ final class WiggleClickTests: XCTestCase {
             return XCTFail("recording has no config")
         }
         settings.shake = ShakeParams()
+        settings.fistSteering = false // this checks the fist drag (FistSteeringTests replays it steering)
         recorded.info["config"] = nil
         let machine = PointerStateMachine(config: settings, displays: [testDisplay])
         _ = machine.setEngaged(true, at: recorded.frames.first?.timestamp ?? 0)

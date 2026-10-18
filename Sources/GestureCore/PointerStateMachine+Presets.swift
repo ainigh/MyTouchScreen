@@ -117,7 +117,8 @@ extension PointerStateMachine {
         let dragKind = config.dragGesture.contact
         if pendingContact == nil {
             guard !zoomClaimsPointingHand else { return nil }
-            let candidates = [dragKind, clickKind].compactMap { $0 }
+            // Fist steering owns the fist: fist click and drag presets wait until it's off.
+            let candidates = [dragKind, clickKind].compactMap { $0 }.filter { !(config.fistSteering && $0 == .fist) }
             guard let kind = candidates.first(where: isClosed) else { return nil }
             let clickOnly = kind == clickKind && kind != dragKind
             if clickOnly && time - lastContactRelease < config.contact.refractoryTime { return nil }
@@ -166,6 +167,8 @@ extension PointerStateMachine {
 
     /// While dragging: has the drag gesture let go?
     func dragReleased() -> Bool {
+        // A fist-steering grab drops when the thumb lifts or the hand opens.
+        if steer.dragging { return steeringDragReleased }
         guard let kind = config.dragGesture.contact else { return true }
         if config.dragGesture == .fistToggle {
             // Opening the hand keeps the button down; the next fist drops.

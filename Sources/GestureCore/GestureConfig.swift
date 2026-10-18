@@ -37,6 +37,13 @@ public struct GestureConfig: Equatable, Codable {
     /// 0…1: how sharp a turn switches a straight trajectory between horizontal and vertical
     /// (35° at 0, 55° at 0.5, 75° at 1).
     public var turnSharpness = 0.5
+    /// Fist steering (on by default; overrides `trajectory`): an open hand moves the cursor
+    /// vertically only, a fist with the thumb up horizontally only, and the thumb is the mouse
+    /// button: tuck it in and lift it to click, grip and move up/down to scroll, grip and hold
+    /// still to grab and drag. See docs/fist-steering.md.
+    public var fistSteering = true
+    /// Fist steering: the thumb held tucked in, still, this long grabs (mouse down) to drag.
+    public var gripDragHold = 0.5
     /// Slow down near, and pull into, the buttons and links the hand is reaching for.
     public var assist = TargetAssistParams()
 

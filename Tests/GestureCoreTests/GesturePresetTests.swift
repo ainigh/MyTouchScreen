@@ -6,7 +6,7 @@ import XCTest
 final class GesturePresetTests: XCTestCase {
     private func config(click: ClickGesture = .wiggle, drag: DragGesture = .fistHold,
                         zoom: ZoomGesture = .off) -> GestureConfig {
-        var c = GestureConfig()
+        var c = GestureConfig.classic
         c.clickGesture = click
         c.dragGesture = drag
         c.zoomGesture = zoom

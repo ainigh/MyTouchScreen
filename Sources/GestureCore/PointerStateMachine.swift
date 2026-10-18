@@ -38,6 +38,10 @@ public struct PointerSnapshot: Equatable {
     public var clickProgress: Double = 0
     /// A zoom gesture is in progress.
     public var isZooming = false
+    /// A fist is scrolling (fist steering).
+    public var isScrolling = false
+    /// The hand is a steering fist (fist steering): the cursor moves sideways only.
+    public var isSteeringFist = false
     /// The clickable thing target assist is drawing the cursor to, if any.
     public var assistFocus: AssistFocus?
 
@@ -84,6 +88,8 @@ public final class PointerStateMachine {
     var smoother: PointerSmoother
     /// Horizontal-or-vertical paths, after the smoother (screen points).
     var trajectoryLock = TrajectoryLock()
+    /// Fist steering's state (see PointerStateMachine+FistSteering.swift).
+    var steer = FistSteerState()
     /// Slowdown and magnet near clickable things, after the trajectory (screen points).
     var assist: TargetAssist
     var momentum: ScrollMomentum
@@ -268,6 +274,8 @@ public final class PointerStateMachine {
             out.events.append(.externalMouseTookOver)
         }
         // A held hand cursor is stale once the real mouse has moved; start over from the hand.
+        out.append(endFistScroll(at: time))
+        steer = FistSteerState()
         freeze = nil
         assist.reset()
         trajectoryLock.reset()
@@ -438,6 +446,7 @@ public final class PointerStateMachine {
             out.events.append(.dragEnded)
         }
         out.append(endZoom())
+        out.append(endFistScroll(at: lastTime))
         resetGestures()
         if isEngaged { state = .engaged }
         return out
@@ -459,6 +468,7 @@ public final class PointerStateMachine {
         latestTipSpeed = 0
         assist.reset()
         trajectoryLock.reset()
+        steer = FistSteerState()
     }
 
     // MARK: Cursor helpers
@@ -487,7 +497,9 @@ public final class PointerStateMachine {
         snapshot.displayID = router.current?.id
         snapshot.engageProgress = engageProgress(at: time)
         snapshot.isHeld = isEngaged && freeze != nil
-        snapshot.clickProgress = isEngaged ? dwellProgress(at: time) : 0
+        snapshot.clickProgress = isEngaged ? max(dwellProgress(at: time), gripProgress(at: time)) : 0
+        snapshot.isScrolling = isEngaged && steer.scrolling
+        snapshot.isSteeringFist = isEngaged && steer.isFist
         snapshot.isZooming = isEngaged && zoomMetric != nil
         snapshot.assistFocus = isEngaged && state == .hover && freeze == nil ? assist.focus : nil
         snapshot.handAway = isEngaged && time - lastHandSeen > Self.handAwayAfter
