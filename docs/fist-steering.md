@@ -31,6 +31,8 @@ your open hand to its height, close your hand, and slide the fist across.
 |---|---|---|---|
 | **Open hand** (pointing) | cursor moves up / down | nothing (ignored) | nothing — the cursor rests |
 | **Fist** | **scrolls** the page; the cursor stays put | cursor moves left / right | **clicks** after 0.6 s (the ring fills) |
+| **Fist, thumb up** 👍 | — | — | **scrolls up** while held, faster the longer; the cursor stays put |
+| **Fist, thumb down** 👎 | — | — | **scrolls down** while held, faster the longer; the cursor stays put |
 
 Everything else is unchanged: both open palms still turn Wisp on and off, the wiggle still clicks
 with the open hand, and the shortcut still kills it instantly.
@@ -85,6 +87,28 @@ with the open hand, and the shortcut still kills it instantly.
 - **Speed and direction:** Settings → Pointer → *Fist scroll speed*, and *Scroll direction follows
   the system* (untick it to choose the direction for Wisp alone).
 
+## Scrolling with your thumb
+
+A fist with the **thumb up** scrolls up; with the **thumb down** it scrolls down
+(Settings → Pointer → *Thumbs up / thumbs down scrolls*, on by default).
+
+- **Hold to keep going.** It scrolls for as long as the thumb stays out, starting gently
+  (about 400 points a second) and speeding up to about 1600 over two seconds. A quick thumbs-up
+  nudges the page, and a long one travels. *Fist scroll speed* scales both.
+- **Tuck the thumb to stop.** The fist then works as usual again: slide, scroll by moving, or
+  hold still to click.
+- **The cursor stays put.** Turning the wrist for a thumbs-down moves the palm, so the cursor is
+  held while the thumb scrolls.
+- **Up means up.** Thumbs up always shows what's above, whatever the natural-scrolling setting: it
+  points the way you want to go, like an arrow key, rather than dragging the page.
+- **It never clicks.** A thumb sticking out stops the still-fist click, even before the thumb
+  counts.
+- **How Wisp reads it.** The thumb counts as up or down when it sticks clearly out of the fist
+  (its tip well away from the index knuckle) and its last two segments point within about 40° of
+  straight up or down. It has to be held for 0.15 s to start, and tucked for 0.1 s to stop. These
+  thresholds are a first guess from synthetic hands. If it misfires, switch it off or record a
+  session.
+
 ## How it fits with the other settings
 
 | Setting | With fist steering on |
@@ -137,5 +161,5 @@ machine.
   which axis (`forcedAxis`).
 - `Tests/GestureCoreTests/FistSteeringTests.swift`: what the mode promises, including a replay of
   a real recorded session.
-- Settings: `GestureConfig.fistSteering` (on by default) and `fistClickHold`. Scroll speed and
-  direction are `scrollSpeed` and `naturalScrolling`.
+- Settings: `GestureConfig.fistSteering` (on by default), `fistClickHold` and `thumbScroll` (on
+  by default). Scroll speed and direction are `scrollSpeed` and `naturalScrolling`.

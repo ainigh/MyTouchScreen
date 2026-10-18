@@ -125,7 +125,8 @@ two things: your **index finger** and your **fist**.
 **Fist steering (the default; see [docs/fist-steering.md](docs/fist-steering.md)).** Your
 hand's shape picks the direction: an **open hand** moves the cursor **up and down** only, a
 **fist** moves it **left and right** only. Move the fist **up or down to scroll** (the cursor
-stays put), or **hold the fist still to click** (0.6 s; the ring fills). While it's on, the fist
+stays put), **thumbs up / thumbs down** to scroll up / down while held, or **hold the fist
+still to click** (0.6 s; the ring fills). While it's on, the fist
 doesn't drag (pick a pinch drag in Settings → Gestures) and the Trajectory setting rests. Turn it
 off in Settings → Pointer or menu → *Fist Steering* to get everything below back.
 
@@ -199,7 +200,7 @@ Left-handed? Settings → Pointer → *Pointing hand: Left* swaps the roles.
 Menu bar → *Settings…*
 
 - **Pointer:** a short "how it works"; *Fist steering* (on/off, hold time for a still-fist
-  click, fist scroll speed and direction); *Trajectory* (straight lines or free, and how sharp a turn
+  click, thumbs-up/down scrolling, fist scroll speed and direction); *Trajectory* (straight lines or free, and how sharp a turn
   switches direction); then three things. *Steadiness* (Snappy ↔ Steady): move
   it toward Steady if the cursor shivers while your hand is still, toward Snappy if it trails
   behind your finger. *Hand movement to cover the screen* (Less ↔ More). *Pointing hand*. With

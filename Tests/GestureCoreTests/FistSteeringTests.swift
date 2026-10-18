@@ -160,4 +160,80 @@ final class FistSteeringTests: XCTestCase {
             XCTAssertTrue(fists.contains { $0.contains(time) }, "scroll at \(time) s outside a held fist")
         }
     }
+
+    // MARK: Thumb scroll
+
+    /// `frame` with its thumb straightened, pointing up or down from beside the index knuckle.
+    private func thumbed(_ frame: HandFrame, _ direction: ThumbDirection) -> HandFrame {
+        var f = frame
+        let size = f.handSize
+        let sign = direction == .up ? -1.0 : 1.0
+        func image(_ metric: Point2) -> Point2 { Point2(metric.x, metric.y * f.imageAspect) }
+        let base = f.metric(.indexMCP) + Point2(-0.15 * size, 0)
+        f.points[Joint.thumbMP.rawValue] = image(base)
+        f.points[Joint.thumbIP.rawValue] = image(base + Point2(0, sign * 0.35 * size))
+        f.points[Joint.thumbTip.rawValue] = image(base + Point2(0, sign * 0.7 * size))
+        return f
+    }
+
+    private func thumbStream(_ direction: ThumbDirection, from start: Double = 1.3, until end: Double = 3.0,
+                             duration: Double = 4) -> [TrackingFrame] {
+        stream(duration: duration, fist: { $0 >= 1.0 }).map { frame in
+            guard frame.timestamp >= start && frame.timestamp < end else { return frame }
+            var f = frame
+            f.hands = f.hands.map { thumbed($0, direction) }
+            return f
+        }
+    }
+
+    func testThumbReading() {
+        var fist = MotionSynthetic.placedHand(tip: Point2(0.45, 0.45), size: 0.12, offset: .zero)
+        fist.makeFist()
+        let frame = fist.frame(at: 0)
+        XCTAssertNil(PointerStateMachine.thumbDirection(frame), "a tucked thumb")
+        XCTAssertEqual(PointerStateMachine.thumbDirection(thumbed(frame, .up)), .up)
+        XCTAssertEqual(PointerStateMachine.thumbDirection(thumbed(frame, .down)), .down)
+        let pointing = MotionSynthetic.placedHand(tip: Point2(0.45, 0.45), size: 0.12, offset: .zero).frame(at: 0)
+        XCTAssertNil(PointerStateMachine.thumbDirection(pointing), "a pointing hand's thumb")
+    }
+
+    /// Thumbs up scrolls up (content down) while held, faster the longer; tucking the thumb
+    /// stops it; the cursor stays put and nothing clicks.
+    func testThumbsUpScrollsUpAndThumbsDownScrollsDown() {
+        for direction in [ThumbDirection.up, .down] {
+            let (log, _) = run(thumbStream(direction))
+            let out = merged(log)
+            XCTAssertEqual(out.scrolls(.began).count, 1, "\(direction)")
+            XCTAssertEqual(out.scrolls(.ended).count, 1)
+            XCTAssertEqual(out.scrolls(.momentumBegan).count, 0, "no glide after a thumb scroll")
+            let deltas = out.scrolls(.changed).map(\.1)
+            XCTAssertTrue(deltas.allSatisfy { direction == .up ? $0 > 0 : $0 < 0 }, "\(direction): \(deltas.prefix(3))")
+            XCTAssertGreaterThan(abs(deltas.reduce(0, +)), 500, "about 1.3 s of scrolling")
+            XCTAssertGreaterThan(abs(deltas.last!), abs(deltas.first!), "speeds up while held")
+            XCTAssertEqual(out.clicks.count, 0, "a held thumb never clicks")
+            let scrollTimes = log.filter { !$0.out.scrolls(.changed).isEmpty }.map(\.time)
+            XCTAssertGreaterThan(scrollTimes.first ?? 0, 1.3 + 0.15, "after the thumb is confirmed")
+            XCTAssertLessThan(scrollTimes.last ?? 9, 3.2, "stops once the thumb is tucked")
+            guard let before = cursor(at: 0.95, log) else { return XCTFail("no cursor") }
+            let during = log.filter { $0.time > 1.0 && $0.time < 3.0 }.compactMap(\.cursor)
+            XCTAssertTrue(during.allSatisfy { $0.distance(to: before) < 1 }, "the cursor stays put")
+        }
+    }
+
+    /// A fist made with the thumb already up scrolls straight away (after the fist and thumb
+    /// are confirmed), with no still-fist click first.
+    func testThumbsUpFromTheStart() {
+        let (log, _) = run(thumbStream(.up, from: 1.0))
+        let out = merged(log)
+        XCTAssertEqual(out.clicks.count, 0)
+        let first = log.first { !$0.out.scrolls(.changed).isEmpty }?.time ?? 9
+        XCTAssertLessThan(first, 1.0 + 0.25 + 0.15 + 0.1)
+    }
+
+    func testThumbScrollCanBeSwitchedOff() {
+        var config = steering
+        config.thumbScroll = false
+        let out = merged(run(thumbStream(.up), config).log)
+        XCTAssertEqual(out.scrolls(.began).count, 0)
+    }
 }

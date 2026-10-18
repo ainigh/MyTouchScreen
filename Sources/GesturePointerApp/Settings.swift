@@ -265,6 +265,9 @@ private struct PointerSettings: View {
                                range: 0.3...1.5, low: "Quick", high: "Long",
                                help: String(format: "%.1f s. The ring around the cursor fills meanwhile; move the fist to cancel.",
                                             settings.config.fistClickHold))
+                    Toggle("Thumbs up / thumbs down scrolls", isOn: $settings.config.thumbScroll)
+                    Text("A fist with the thumb up scrolls up, thumb down scrolls down, faster the longer you hold it. The cursor stays put.")
+                        .font(.caption).foregroundStyle(.secondary)
                     EndsSlider(title: "Fist scroll speed", value: $settings.config.scrollSpeed, range: 0.3...3,
                                low: "Slow", high: "Fast")
                     Toggle("Scroll direction follows the system (Natural scrolling)", isOn: $settings.scrollFollowsSystem)

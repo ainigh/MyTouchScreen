@@ -16,6 +16,13 @@ struct FistSteerState {
     /// This fist scrolled; it doesn't click (stopping after a scroll isn't a click).
     var scrolled = false
     var scrolling = false
+    /// The scroll comes from the thumb (up / down), not from moving the fist.
+    var byThumb = false
+    var thumbScrollSince: Double = 0
+    /// The thumb's direction once confirmed, and the reading being confirmed.
+    var thumb: ThumbDirection?
+    var thumbCandidate: ThumbDirection?
+    var thumbCandidateSince: Double = 0
     /// The scroll's began phase went out (the real mouse may have suppressed it).
     var sentBegin = false
     /// Palm position (box units, filtered) where the fist formed, last moved sideways or last
@@ -30,11 +37,17 @@ struct FistSteerState {
     var palmFilter = OneEuroFilter2D(OneEuroParameters(minCutoff: 1.5, beta: 8))
 }
 
+/// Which way a fist's thumb sticks out.
+enum ThumbDirection: Equatable { case up, down }
+
 /// Fist steering (`config.fistSteering`, on by default): the hand's shape picks the axis.
 ///
 /// - Open hand: the cursor moves vertically only (following the fingertip).
 /// - Fist: the cursor moves horizontally only, following the palm (a fist has no fingertip).
 ///   Moving the fist up and down scrolls instead; the cursor stays put.
+/// - Thumb up / thumb down (`config.thumbScroll`): the fist scrolls up / down for as long as
+///   it's held, faster the longer, and the cursor stays put (turning the wrist for a thumbs-down
+///   moves the palm). It never clicks. A tucked thumb is the plain fist.
 /// - A fist held still for `fistClickHold` clicks where the cursor is (the ring fills meanwhile).
 ///   It moves before it clicks again; a fist that scrolled doesn't click.
 /// - Changing shape never drags the cursor: closing the hand pulls the fingertip down, so the
@@ -89,6 +102,11 @@ extension PointerStateMachine {
             steer.openingSince = nil
         }
 
+        if let thumbed = updateThumbScroll(hand, at: time, suppressed: suppressed) {
+            out.append(thumbed)
+            return out
+        }
+
         // Scroll with the palm's height.
         let palm = steer.palmFilter.filter(mapper.boxPoint(fromCamera: hand.palmCenter), at: time)
         let palmY = palm.y
@@ -138,7 +156,8 @@ extension PointerStateMachine {
 
         // Click on a still fist.
         if steer.clicked && tipSpeed > Self.fistMoveSpeed { steer.clicked = false }
-        guard !steer.scrolled, !steer.clicked else {
+        // A thumb sticking out (even before it counts) is heading for a thumb scroll, not a click.
+        guard !steer.scrolled, !steer.clicked, steer.thumbCandidate == nil else {
             steer.stillSince = nil
             return out
         }
@@ -195,17 +214,105 @@ extension PointerStateMachine {
         var out = StepOutput(events: [.scrollEnded])
         if steer.sentBegin {
             out.intents.append(.scroll(dx: 0, dy: 0, phase: .ended))
-            if abs(steer.velocity) > Self.momentumStartSpeed {
+            if !steer.byThumb && abs(steer.velocity) > Self.momentumStartSpeed {
                 out.intents.append(momentum.start(velocity: Point2(0, steer.velocity), at: time))
             }
         }
         steer.scrolling = false
+        steer.byThumb = false
         steer.sentBegin = false
         steer.velocity = 0
         steer.remainder = 0
         steer.anchor = nil
         return out
     }
+
+    // MARK: Thumb scroll
+
+    /// Thumb up / down scrolls. Returns the frame's output while the thumb owns the fist, nil
+    /// when it doesn't (a tucked thumb: the fist moves, scrolls and clicks as usual).
+    private func updateThumbScroll(_ hand: HandFrame, at time: Double, suppressed: Bool) -> StepOutput? {
+        let reading = config.thumbScroll ? Self.thumbDirection(hand) : nil
+        if reading != steer.thumbCandidate {
+            steer.thumbCandidate = reading
+            steer.thumbCandidateSince = time
+        }
+        let confirm = reading == nil ? Self.thumbTuckTime : Self.thumbConfirmTime
+        if steer.thumb != reading && time - steer.thumbCandidateSince >= confirm {
+            steer.thumb = reading
+        }
+        var out = StepOutput()
+        guard let direction = steer.thumb else {
+            guard steer.byThumb else { return nil }
+            // Thumb tucked back: the plain fist again (its scroll measures afresh).
+            out.append(endFistScroll(at: time))
+            return out
+        }
+        if !steer.byThumb {
+            out.append(endFistScroll(at: time))
+            steer.scrolling = true
+            steer.byThumb = true
+            steer.scrolled = true
+            steer.stillSince = nil
+            steer.remainder = 0
+            steer.thumbScrollSince = time
+            steer.lastPalmTime = time
+            out.intents += momentum.stop()
+            out.events.append(.scrollStarted)
+        }
+        // The cursor stays put: re-hold it every frame (turning the wrist moves the palm).
+        let point = freeze?.point ?? lastEmittedCursor ?? cursor ?? .zero
+        freezeCursor(at: point, fresh: true)
+        let dt = min(max(time - steer.lastPalmTime, 0), 0.1)
+        steer.lastPalmTime = time
+        // Up shows what's above (content moves down), whatever the natural-scrolling setting.
+        let ramp = clamp01((time - steer.thumbScrollSince) / Self.thumbRampTime)
+        let speed = (Self.thumbScrollStartSpeed + (Self.thumbScrollTopSpeed - Self.thumbScrollStartSpeed) * ramp)
+            * max(config.scrollSpeed, 0.05)
+        let delta = speed * dt * (direction == .up ? 1 : -1) + steer.remainder
+        guard abs(delta) >= 0.5, !suppressed else {
+            steer.remainder = suppressed ? 0 : delta
+            return out
+        }
+        steer.remainder = 0
+        if !steer.sentBegin {
+            steer.sentBegin = true
+            out.intents.append(.scroll(dx: 0, dy: 0, phase: .began))
+        }
+        out.intents.append(.scroll(dx: 0, dy: delta, phase: .changed))
+        return out
+    }
+
+    /// Which way the thumb sticks out of a fist, if it clearly does: well away from the index
+    /// knuckle, its last two segments pointing mostly up or down (in camera space, so it works
+    /// whichever way the wrist is turned). A tucked thumb is nil.
+    static func thumbDirection(_ hand: HandFrame) -> ThumbDirection? {
+        let size = hand.handSize
+        guard hand.jointConfidences[Joint.thumbTip.rawValue] >= 0.3,
+              hand.distance(.thumbTip, .indexMCP) / size > thumbOutSpread else { return nil }
+        let along = hand.metric(.thumbTip) - hand.metric(.thumbMP)
+        let length = along.length
+        guard length / size > thumbOutLength else { return nil }
+        let vertical = along.y / length
+        if vertical < -thumbVertical { return .up }
+        if vertical > thumbVertical { return .down }
+        return nil
+    }
+
+    /// Thumb tip at least this far from the index knuckle (hand sizes): sticking out, not tucked.
+    static let thumbOutSpread = 0.6
+    /// Thumb MP → tip at least this long (hand sizes): straightened.
+    static let thumbOutLength = 0.3
+    /// …and pointing within about 40° of straight up or down.
+    static let thumbVertical = 0.75
+    /// A thumb direction counts after this long; a tucked thumb ends the scroll after this long.
+    static let thumbConfirmTime = 0.15
+    static let thumbTuckTime = 0.1
+    /// Thumb scroll speed (points per second at scroll speed 1): from the start speed to the top
+    /// speed over the ramp time, so a short hold nudges and a long hold travels.
+    static let thumbScrollStartSpeed = 400.0
+    static let thumbScrollTopSpeed = 1600.0
+    static let thumbRampTime = 2.0
 
     /// 0…1 toward a still-fist click (after a short grace, so the ring doesn't flicker).
     func fistClickProgress(at time: Double) -> Double {

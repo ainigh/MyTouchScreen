@@ -43,6 +43,8 @@ public struct GestureConfig: Equatable, Codable {
     public var fistSteering = true
     /// Fist steering: a fist held still this long clicks (seconds).
     public var fistClickHold = 0.6
+    /// Fist steering: a fist with the thumb up scrolls up, thumb down scrolls down.
+    public var thumbScroll = true
     /// Slow down near, and pull into, the buttons and links the hand is reaching for.
     public var assist = TargetAssistParams()
 
