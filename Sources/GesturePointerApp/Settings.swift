@@ -25,6 +25,8 @@ final class AppSettings: ObservableObject {
         static let previewCorner = "previewCorner"
         static let scrollFollowsSystem = "scrollFollowsSystem"
         static let pointerTuning = "pointerTuningVersion"
+        static let highlightTarget = "highlightAssistTarget"
+        static let outlineTargets = "outlineAssistTargets"
     }
 
     /// Bumped when the pointer's smoothing changes meaning. Saved smoothing from an older version
@@ -53,6 +55,10 @@ final class AppSettings: ObservableObject {
     @Published var previewCorner: Int { didSet { defaults.set(previewCorner, forKey: Keys.previewCorner); changed() } }
     /// Scroll direction follows System Settings → Trackpad/Mouse → Natural scrolling.
     @Published var scrollFollowsSystem: Bool { didSet { defaults.set(scrollFollowsSystem, forKey: Keys.scrollFollowsSystem); changed() } }
+    /// Outline the control target assist is drawing the cursor to.
+    @Published var highlightTarget: Bool { didSet { defaults.set(highlightTarget, forKey: Keys.highlightTarget); changed() } }
+    /// Faintly outline every target found (for tuning target assist).
+    @Published var outlineTargets: Bool { didSet { defaults.set(outlineTargets, forKey: Keys.outlineTargets); changed() } }
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -70,6 +76,8 @@ final class AppSettings: ObservableObject {
         enabled = defaults.object(forKey: Keys.enabled) as? Bool ?? true
         previewCorner = defaults.object(forKey: Keys.previewCorner) as? Int ?? 3
         scrollFollowsSystem = defaults.object(forKey: Keys.scrollFollowsSystem) as? Bool ?? true
+        highlightTarget = defaults.object(forKey: Keys.highlightTarget) as? Bool ?? true
+        outlineTargets = defaults.object(forKey: Keys.outlineTargets) as? Bool ?? false
         if defaults.integer(forKey: Keys.pointerTuning) < Self.pointerTuningVersion {
             // Property observers don't run in init, so save explicitly.
             config.resetPointerTuning()
@@ -121,6 +129,8 @@ final class AppSettings: ObservableObject {
         zoomStyle = .keyboard
         hotkey = .default
         scrollFollowsSystem = true
+        highlightTarget = true
+        outlineTargets = false
     }
 
     // MARK: Export / import
@@ -134,6 +144,8 @@ final class AppSettings: ObservableObject {
             "showStatusGlyph": showStatusGlyph,
             "zoomStyle": zoomStyle.rawValue,
             "scrollFollowsSystem": scrollFollowsSystem,
+            "highlightTarget": highlightTarget,
+            "outlineTargets": outlineTargets,
             "hotkey": ["keyCode": hotkey.keyCode, "modifiers": hotkey.modifiers],
         ]
         let root: [String: Any] = [
@@ -166,6 +178,8 @@ final class AppSettings: ObservableObject {
             if let v = app["showStatusGlyph"] as? Bool { showStatusGlyph = v }
             if let v = app["zoomStyle"] as? String, let z = ZoomStyle(rawValue: v) { zoomStyle = z }
             if let v = app["scrollFollowsSystem"] as? Bool { scrollFollowsSystem = v }
+            if let v = app["highlightTarget"] as? Bool { highlightTarget = v }
+            if let v = app["outlineTargets"] as? Bool { outlineTargets = v }
             if let h = app["hotkey"] as? [String: Any],
                let code = (h["keyCode"] as? NSNumber)?.uint32Value,
                let mods = (h["modifiers"] as? NSNumber)?.uint32Value {
@@ -189,6 +203,8 @@ struct SettingsView: View {
         TabView {
             PointerSettings(settings: settings)
                 .tabItem { Label("Pointer", systemImage: "cursorarrow.rays") }
+            TargetSettings(settings: settings)
+                .tabItem { Label("Targets", systemImage: "scope") }
             GestureSettings(settings: settings)
                 .tabItem { Label("Gestures", systemImage: "hand.tap") }
             CameraSettings(settings: settings, cameras: cameras, onCalibrate: onCalibrate)
@@ -197,7 +213,7 @@ struct SettingsView: View {
                             onLaunchAtLoginChange: onLaunchAtLoginChange)
                 .tabItem { Label("General", systemImage: "gearshape") }
         }
-        .frame(width: 520, height: 500)
+        .frame(width: 520, height: 560)
     }
 }
 
@@ -270,6 +286,74 @@ private struct PointerSettings: View {
             }
         }
         .formStyle(.grouped)
+    }
+}
+
+/// Target assist: every knob, so the owner can experiment while pointing.
+@MainActor
+private struct TargetSettings: View {
+    @ObservedObject var settings: AppSettings
+
+    private let howItWorks = "Near a button, link or field the cursor slows down, so the same hand movement aims more finely, and a hand that stops just beside one is pulled onto it. Where you're heading counts: a target straight ahead slows you from further away; the ones you pass beside are left alone, and fast moves across the screen are never slowed. Changes apply as you move the sliders."
+
+    var body: some View {
+        Form {
+            Section {
+                Toggle("Help me hit buttons and links", isOn: $settings.config.assist.enabled)
+                Text(howItWorks).font(.caption).foregroundStyle(.secondary)
+                if !Permissions.accessibilityGranted {
+                    Text("Needs Accessibility permission to see what's on screen (Setup & Permissions…).")
+                        .font(.caption).foregroundStyle(Color(nsColor: Theme.warning))
+                }
+            }
+            Section("Feel") {
+                EndsSlider(title: "Slow down on targets", value: $settings.config.assist.slowdown, range: 0...1,
+                           low: "Off", high: "Strong",
+                           help: "How much finer the cursor moves over a target. Strong: a fifth of your hand's movement.")
+                EndsSlider(title: "Magnet", value: $settings.config.assist.magnet, range: 0...1,
+                           low: "Off", high: "Strong",
+                           help: "How far away a stopping cursor gets pulled onto a target from.")
+                EndsSlider(title: "Reach", value: $settings.config.assist.reachPoints, range: 8...100,
+                           low: "Close", high: "Far",
+                           help: "How close the cursor has to get to a target before it acts.")
+                EndsSlider(title: "Anticipate where I'm heading", value: $settings.config.assist.anticipation,
+                           range: 0...1, low: "Off", high: "Strong",
+                           help: "Strong: targets you're moving toward act from further away, and ones off to the side are ignored.")
+                EndsSlider(title: "Get back under my finger", value: $settings.config.assist.catchUp, range: 0...1,
+                           low: "Slowly", high: "Quickly",
+                           help: "After a slowdown the cursor is a little behind your finger; moving on makes it up at this rate.")
+            }
+            .disabled(!settings.config.assist.enabled)
+            Section("What counts as a target") {
+                ForEach(TargetKind.allCases, id: \.self) { kind in
+                    Toggle(kind.title, isOn: kindBinding(kind))
+                }
+            }
+            .disabled(!settings.config.assist.enabled)
+            Section("Show") {
+                Toggle("Outline the target the cursor is drawn to", isOn: $settings.highlightTarget)
+                Toggle("Outline every target found (for tuning)", isOn: $settings.outlineTargets)
+            }
+            Section {
+                Button("Reset Target Assist to Defaults") {
+                    let enabled = settings.config.assist.enabled
+                    settings.config.assist = TargetAssistParams()
+                    settings.config.assist.enabled = enabled
+                }
+            }
+        }
+        .formStyle(.grouped)
+    }
+
+    private func kindBinding(_ kind: TargetKind) -> Binding<Bool> {
+        Binding(
+            get: { settings.config.assist.kinds.contains(kind) },
+            set: { on in
+                var kinds = settings.config.assist.kinds.filter { $0 != kind }
+                if on { kinds.append(kind) }
+                // Keep the declaration order, so the saved settings don't churn.
+                settings.config.assist.kinds = TargetKind.allCases.filter { kinds.contains($0) }
+            })
     }
 }
 

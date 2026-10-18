@@ -130,6 +130,14 @@ Resume from the first unchecked item. Tick only after verification per `CLAUDE.m
 - [x] Tests (83) green on Linux incl. owner recording; full `swift build` and check.sh green; Mac changes (Settings view, migration, camera `away` mode, overlay ring, texts) reviewed, not compiled
 - [x] Committed
 
+## Target assist (owner request)
+- [x] `TargetAssist` in GestureCore: slowdown near likely targets, heading look-ahead, flick relief, catch-up under the finger, magnet into the target's middle, priority by kind/size/default/recent clicks, no-trap release and hold-back budget
+- [x] Targets carried in `TrackingFrame` (recordings and replays include them); settings in `GestureConfig.assist`, lenient decoding
+- [x] Tests (125): laser pointer unchanged without targets or when off, slowdown proportional to the setting, never traps, catch-up only with hand motion, magnet pulls in and lets go, anticipation, flicks, priority, kinds filter, sanitising, recording round-trip, machine rest and wiggle-click beside a button land in it
+- [x] Mac: `TargetScanner` (Accessibility walk off the main/camera/pipeline queues), pipeline plumbing, overlay outlines, Settings → Targets tab, menu toggle; reviewed, not compiled here (CI compiles it)
+- [x] README + DECISIONS; Linux build + tests + check.sh green
+- [x] Committed
+
 ## Owner handoff (for the human, after Claude is done)
 1. `xcode-select --install` if not already done.
 2. `make app && make run`.

@@ -38,6 +38,8 @@ public struct PointerSnapshot: Equatable {
     public var clickProgress: Double = 0
     /// A zoom gesture is in progress.
     public var isZooming = false
+    /// The clickable thing target assist is drawing the cursor to, if any.
+    public var assistFocus: AssistFocus?
 
     public init() {}
 }
@@ -80,6 +82,8 @@ public final class PointerStateMachine {
     private var mapperDisplayID: String?
     var router: DisplayRouter
     var smoother: PointerSmoother
+    /// Slowdown and magnet near clickable things, after the smoother (screen points).
+    var assist: TargetAssist
     var momentum: ScrollMomentum
 
     // Hand slots: the pointing hand and the other hand (the two-palm toggle only).
@@ -168,6 +172,7 @@ public final class PointerStateMachine {
                                       boxScale: config.boxScale, edgeOvershoot: config.edgeOvershoot)
         self.mapperDisplayID = displayID
         self.smoother = PointerSmoother(config: config)
+        self.assist = TargetAssist(params: config.assist)
         self.momentum = ScrollMomentum(friction: config.momentumFriction, minSpeed: config.momentumMinSpeed)
         self.shakeDetector = ShakeDetector(params: config.shake)
         self.primary = GestureDetector(config: config)
@@ -184,6 +189,7 @@ public final class PointerStateMachine {
         router.dwell = newConfig.displayJumpDwell
         router.locked = newConfig.stayOnEngagedDisplay
         smoother.updateConfig(newConfig)
+        assist.params = newConfig.assist
         momentum.updateParameters(friction: newConfig.momentumFriction, minSpeed: newConfig.momentumMinSpeed)
         primary.config = newConfig
         secondary.config = newConfig
@@ -261,6 +267,7 @@ public final class PointerStateMachine {
         }
         // A held hand cursor is stale once the real mouse has moved; start over from the hand.
         freeze = nil
+        assist.reset()
         cursorHistory.removeAll()
         glide = nil
         disarmContacts()
@@ -296,6 +303,7 @@ public final class PointerStateMachine {
         let time = frame.timestamp
         lastTime = time
         var out = StepOutput()
+        if let targets = frame.targets { assist.setTargets(targets) }
 
         let (primaryHand, secondaryHand) = assignPointerAndOther(frame.hands, at: time)
         snapshot.hands = frame.hands
@@ -446,6 +454,7 @@ public final class PointerStateMachine {
         lastRawBox = nil
         recentTips.removeAll()
         latestTipSpeed = 0
+        assist.reset()
     }
 
     // MARK: Cursor helpers
@@ -476,6 +485,7 @@ public final class PointerStateMachine {
         snapshot.isHeld = isEngaged && freeze != nil
         snapshot.clickProgress = isEngaged ? dwellProgress(at: time) : 0
         snapshot.isZooming = isEngaged && zoomMetric != nil
+        snapshot.assistFocus = isEngaged && state == .hover && freeze == nil ? assist.focus : nil
         snapshot.handAway = isEngaged && time - lastHandSeen > Self.handAwayAfter
         snapshot.displayJumpProgress = router.jumpProgress(at: time)
         snapshot.pose = primary.state.pose

@@ -52,20 +52,21 @@ extension HandFrame: Codable {
 }
 
 extension TrackingFrame: Codable {
-    private enum CodingKeys: String, CodingKey { case timestamp = "t", hands = "h" }
+    private enum CodingKeys: String, CodingKey { case timestamp = "t", hands = "h", targets = "g" }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         let t = try c.decode(Double.self, forKey: .timestamp)
         var hands = try c.decode([HandFrame].self, forKey: .hands)
         for i in hands.indices { hands[i].timestamp = t }
-        self.init(timestamp: t, hands: hands)
+        self.init(timestamp: t, hands: hands, targets: try c.decodeIfPresent([AssistTarget].self, forKey: .targets))
     }
 
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encode(HandFrame.round(timestamp, 4), forKey: .timestamp)
         try c.encode(hands, forKey: .hands)
+        try c.encodeIfPresent(targets, forKey: .targets)
     }
 }
 

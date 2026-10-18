@@ -146,6 +146,12 @@ Cursor Speed submenus) switches between presets, exactly one of each at a time:
 - **Zoom** (sent as ⌘+/⌘− or ⌘-scroll): off · two fists pulled apart · two pinches pulled apart ·
   the other hand's fist raised / lowered · the other hand's pinch raised / lowered.
 - **Cursor speed:** direct (1:1) and eight speed-dependent gains (see `PointerResponse`).
+- **Target assist** (on by default; menu → *Target Assist*, tuned in Settings → Targets): near a
+  button, link, menu, checkbox or text field the cursor slows down, so the same hand movement
+  aims more finely there, and a hand that stops just beside one gets pulled onto it. Targets
+  you're heading for act from further away; ones you pass beside, and fast moves across the
+  screen, are left alone. Moving on brings the cursor back under your finger. It reads what's on
+  screen through the Accessibility permission Wisp already has.
 
 Notes for the defaults: engaging never clicks by itself, and resting never clicks — **only a
 wiggle does**: pinches, single taps and hovering never click. A fist that flickers for a moment while you
@@ -163,6 +169,9 @@ Left-handed? Settings → Pointer → *Pointing hand: Left* swaps the roles.
 - **Outer ring** fills during the two-palm hold (engage/disengage); while pointing it shows
   full while the cursor waits on a click, press or drop point for your hand to settle.
 - **Ripple** where a wiggle clicked (a double ripple for a double click).
+- **Target outline**: a soft teal outline around the control target assist is drawing the
+  cursor to, stronger as the pull grows. Settings → Targets can also outline every target found,
+  to see what Wisp sees while tuning.
 - **Edge glow** while you hold the cursor against an edge to jump displays.
 - **Toasts** at the top of the screen for state changes ("Engaged", "Standing by", "Camera
   paused", "Accessibility permission needed").
@@ -179,6 +188,10 @@ Menu bar → *Settings…*
   it toward Steady if the cursor shivers while your hand is still, toward Snappy if it trails
   behind your finger. *Hand movement to cover the screen* (Less ↔ More). *Pointing hand*. With
   more than one display, *Stay on the display the mouse is on when Wisp turns on*.
+- **Targets** (target assist): on/off, then sliders to experiment with while pointing —
+  *Slow down on targets*, *Magnet*, *Reach*, *Anticipate where I'm heading*, *Get back under my
+  finger* — which kinds of control count (buttons, links, menus, checkboxes/tabs, text fields;
+  list rows and other clickable things are off by default), and the two outlines.
 - **General:** the on/off shortcut and *Both open palms turn Wisp on and off*, sounds, status
   dot, launch at login, export/import settings as JSON, reset to defaults. (The wiggle and fist
   timings are still in the exported JSON for anyone who wants to fine-tune them.)
@@ -197,6 +210,8 @@ frame rate and Vision's speed for 5 seconds, and lists anything wrong.
 |---|---|
 | Halo moves but nothing clicks or moves | Accessibility isn't granted to *this build* of GesturePointer.app. Menu → *Setup & Permissions…* → *Open Accessibility Settings* (it clears the stale entry), then turn GesturePointer on. |
 | Menu-bar icon shows a warning triangle | A permission is missing: menu → *Setup & Permissions…* |
+| Cursor feels sticky or gets pulled where you don't want | Settings → Targets: lower *Slow down on targets* or *Magnet*, or untick the kind of control that gets in the way (or menu → *Target Assist* to switch it off). |
+| Target assist does nothing in an app | Turn on *Outline every target found* (Settings → Targets): if nothing is outlined, that app doesn't expose its controls to Accessibility (some games, canvases and Java apps). Chrome/Electron apps are asked to expose them, which can take a second the first time. |
 | Cursor shivers while your hand is still | Better light on your hand; Settings → Pointer → move *Steadiness* toward Steady. |
 | Cursor trails behind your finger | Settings → Pointer → move *Steadiness* toward Snappy; check `make doctor` shows ≥ 30 fps. |
 | Cursor isn't where you point | Calibrate (Settings → Camera → *Calibrate…*): point at each corner when asked. |
