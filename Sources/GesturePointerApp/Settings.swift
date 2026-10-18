@@ -248,12 +248,30 @@ private struct EndsSlider: View {
 private struct PointerSettings: View {
     @ObservedObject var settings: AppSettings
 
-    private let howItWorks = "Wisp is an invisible laser pointer: the cursor follows your index finger and holds still while your hand does. By default it moves in straight lines, horizontally or vertically (Trajectory below). How you click, drag and zoom is chosen in the Gestures tab. Both open palms turn Wisp on and off."
+    private let howItWorks = "Wisp is an invisible laser pointer: the cursor follows your hand and holds still while your hand does. By default your hand's shape picks the direction (Fist steering below). How you click, drag and zoom is chosen in the Gestures tab. Both open palms turn Wisp on and off."
+
+    private let fistSteeringHelp = "Open hand: the cursor moves up and down only. Fist: it moves left and right only; move the fist up or down to scroll (the cursor stays put), or hold it still to click. While this is on, the fist doesn't drag and the Trajectory setting rests."
 
     var body: some View {
         Form {
             Section("How it works") {
                 Text(howItWorks).font(.caption).foregroundStyle(.secondary)
+            }
+            Section("Fist steering") {
+                Toggle("Fist steers: open hand up/down, fist left/right", isOn: $settings.config.fistSteering)
+                Text(fistSteeringHelp).font(.caption).foregroundStyle(.secondary)
+                if settings.config.fistSteering {
+                    EndsSlider(title: "Hold a still fist to click", value: $settings.config.fistClickHold,
+                               range: 0.3...1.5, low: "Quick", high: "Long",
+                               help: String(format: "%.1f s. The ring around the cursor fills meanwhile; move the fist to cancel.",
+                                            settings.config.fistClickHold))
+                    EndsSlider(title: "Fist scroll speed", value: $settings.config.scrollSpeed, range: 0.3...3,
+                               low: "Slow", high: "Fast")
+                    Toggle("Scroll direction follows the system (Natural scrolling)", isOn: $settings.scrollFollowsSystem)
+                    if !settings.scrollFollowsSystem {
+                        Toggle("Natural scrolling: fist down moves the page down", isOn: $settings.config.naturalScrolling)
+                    }
+                }
             }
             Section("Trajectory") {
                 Picker("Path", selection: $settings.config.trajectory) {
@@ -267,9 +285,12 @@ private struct PointerSettings: View {
                                range: 0...1, low: "Gentle", high: "Sharp",
                                help: "Gentle: a slight turn switches between horizontal and vertical. Sharp: only a near right angle does.")
                 }
-                Text("Applies to every cursor speed, target assist and drags.")
+                Text(settings.config.fistSteering
+                     ? "Resting while fist steering is on (the hand's shape picks the direction)."
+                     : "Applies to every cursor speed, target assist and drags.")
                     .font(.caption).foregroundStyle(.secondary)
             }
+            .disabled(settings.config.fistSteering)
             Section("Feel") {
                 EndsSlider(title: "Steadiness", value: $settings.config.steadiness, range: 0...1,
                            low: "Snappy", high: "Steady",
@@ -394,6 +415,10 @@ private struct GestureSettings: View {
                 .pickerStyle(.radioGroup)
                 .labelsHidden()
                 Text(settings.config.dragGesture.summary).font(.caption).foregroundStyle(.secondary)
+                if settings.config.fistSteering && settings.config.dragGesture.contact == .fist {
+                    Text("Fist steering is on (Pointer tab), so the fist steers and clicks instead of dragging. Pick a pinch or the thumb trigger here to drag.")
+                        .font(.caption).foregroundStyle(Color(nsColor: Theme.warning))
+                }
             }
             Section("Zoom") {
                 Picker("Zoom", selection: $settings.config.zoomGesture) {

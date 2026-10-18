@@ -41,9 +41,10 @@ extension PointerStateMachine {
         return (pointer, other)
     }
 
-    /// The point the cursor follows: the index fingertip, or the palm while dragging with a fist.
+    /// The point the cursor follows: the index fingertip, or the palm while dragging with a fist
+    /// or steering with one.
     func trackedPoint(_ hand: HandFrame) -> Point2 {
-        state == .dragging ? hand.palmCenter : hand[.indexTip]
+        state == .dragging || steer.isFist ? hand.palmCenter : hand[.indexTip]
     }
 
     /// Tracked-point speed in hand sizes per second: the slower of the last two two-frame
@@ -105,9 +106,22 @@ extension PointerStateMachine {
             return held
         }
 
+        if state == .hover && config.fistSteering {
+            out.append(updateFistSteering(hand, at: time, suppressed: suppressed))
+        } else if steer.isFist || steer.scrolling {
+            // Fist steering switched off mid-fist (or a drag began): back to the fingertip.
+            out.append(endFistScroll(at: time))
+            steer = FistSteerState()
+        }
+
         out.append(updateCursor(hand, at: time, suppressed: suppressed))
 
         guard state == .hover else { return out }
+        if steer.isFist {
+            // A steering fist moves sideways and scrolls; its strokes are not a click wiggle.
+            shakeDetector.reset()
+            return out
+        }
         switch config.clickGesture {
         case .wiggle:
             // Wiggles click only with the button up (mid-drag they are just motion).
@@ -157,13 +171,13 @@ extension PointerStateMachine {
                 freeze = nil
                 if let display = router.current {
                     let heldBox = ActiveBoxMapper.boxPoint(fromScreen: held.point, on: display)
-                    if config.pointerResponse.isDirect && config.trajectory == .free {
+                    if config.pointerResponse.isDirect && config.trajectory == .free && !config.fistSteering {
                         glide = (heldBox - (rawBox + warpOffset), time)
                         smoother.reset(to: heldBox, at: time)
                     } else {
-                        // Scaled response or straight lines: the cursor isn't under the finger
-                        // anyway, so it simply carries on from the held point (a glide would be
-                        // scaled, or bent onto one axis, and move a still cursor).
+                        // Scaled response, straight lines or fist steering: the cursor isn't under
+                        // the finger anyway, so it simply carries on from the held point (a glide
+                        // would be scaled, or bent onto one axis, and move a still cursor).
                         smoother.reset(hand: rawBox + warpOffset, cursor: heldBox, at: time)
                         if config.pointerResponse.isDirect { trajectoryLock.reset(holding: held.point) }
                     }
@@ -204,8 +218,10 @@ extension PointerStateMachine {
         guard let display = router.current else { return out }
         let smoothed = ActiveBoxMapper.screenPoint(fromBox: smoother.process(box, at: time), on: display)
         // The trajectory shapes every cursor path, drags included.
+        let forcedAxis: TrajectoryLock.Axis? = config.fistSteering ? (steer.isFist ? .horizontal : .vertical) : nil
         let finger = trajectoryLock.process(finger: smoothed, at: time, bounds: display.frame,
-                                            trajectory: config.trajectory, turnSharpness: config.turnSharpness)
+                                            trajectory: config.trajectory, turnSharpness: config.turnSharpness,
+                                            forcedAxis: forcedAxis)
         let screen: Point2
         if state == .dragging {
             // A drag follows the fist as is: being pulled onto controls would drop things wrong.

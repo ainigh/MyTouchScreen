@@ -80,9 +80,12 @@ public struct TrajectoryLock {
     }
 
     /// Where the cursor goes, given where the (smoothed) finger points this frame.
+    /// `forcedAxis` (fist steering) picks the axis directly, whatever the trajectory setting:
+    /// no picking from the hand's direction and no turns.
     public mutating func process(finger: Point2, at time: Double, bounds: Rect,
-                                 trajectory: Trajectory, turnSharpness: Double) -> Point2 {
-        guard trajectory == .straight else {
+                                 trajectory: Trajectory, turnSharpness: Double,
+                                 forcedAxis: Axis? = nil) -> Point2 {
+        guard trajectory == .straight || forcedAxis != nil else {
             reset()
             return finger
         }
@@ -104,7 +107,9 @@ public struct TrajectoryLock {
             }
             lastMotion = time
         }
-        if let current = axis {
+        if let forcedAxis {
+            axis = forcedAxis
+        } else if let current = axis {
             let along = current == .horizontal ? window.x : window.y
             let across = current == .horizontal ? window.y : window.x
             let sharpness = turnSharpness.isFinite ? clamp01(turnSharpness) : 0.5

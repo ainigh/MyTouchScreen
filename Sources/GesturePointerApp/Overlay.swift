@@ -133,7 +133,8 @@ final class OverlayView: NSView {
             self.point = point
             if snapshot.isEngaged {
                 color = Theme.color(for: snapshot.state)
-                isDown = snapshot.state == .dragging
+                // The centre dot also marks a steering fist, so the hand's mode is visible.
+                isDown = snapshot.state == .dragging || snapshot.isSteeringFist
                 if snapshot.engageProgress > 0 {
                     ringProgress = snapshot.engageProgress
                     ringColor = Theme.idle

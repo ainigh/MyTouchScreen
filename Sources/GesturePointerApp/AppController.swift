@@ -515,6 +515,12 @@ final class AppController: MenuBarActions {
     var hotkeyDisplay: String { settings.hotkey.displayString }
     var engagedHint: String {
         let c = settings.config
+        if c.fistSteering {
+            let drag = c.dragGesture.contact == .fist ? "" : c.dragGesture.hint
+            return (["open hand up/down, fist left/right", "fist up/down scrolls", "still fist clicks",
+                     c.clickGesture.contact == .fist ? "" : c.clickGesture.hint, drag, c.zoomGesture.hint]
+                .filter { !$0.isEmpty }).joined(separator: "; ")
+        }
         let point = c.trajectory == .straight ? "point (straight lines)" : "point like a laser pointer"
         return ([point, c.clickGesture.hint, c.dragGesture.hint, c.zoomGesture.hint]
             .filter { !$0.isEmpty }).joined(separator: "; ")
