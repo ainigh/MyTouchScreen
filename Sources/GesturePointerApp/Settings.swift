@@ -248,12 +248,27 @@ private struct EndsSlider: View {
 private struct PointerSettings: View {
     @ObservedObject var settings: AppSettings
 
-    private let howItWorks = "Wisp is an invisible laser pointer: the cursor goes wherever your index finger points, at any speed, and holds still while your hand does. How you click, drag and zoom is chosen in the Gestures tab. Both open palms turn Wisp on and off."
+    private let howItWorks = "Wisp is an invisible laser pointer: the cursor follows your index finger and holds still while your hand does. By default it moves in straight lines, horizontally or vertically (Trajectory below). How you click, drag and zoom is chosen in the Gestures tab. Both open palms turn Wisp on and off."
 
     var body: some View {
         Form {
             Section("How it works") {
                 Text(howItWorks).font(.caption).foregroundStyle(.secondary)
+            }
+            Section("Trajectory") {
+                Picker("Path", selection: $settings.config.trajectory) {
+                    ForEach(Trajectory.allCases, id: \.self) { Text($0.title).tag($0) }
+                }
+                .pickerStyle(.radioGroup)
+                .labelsHidden()
+                Text(settings.config.trajectory.summary).font(.caption).foregroundStyle(.secondary)
+                if settings.config.trajectory == .straight {
+                    EndsSlider(title: "Turn needed to change direction", value: $settings.config.turnSharpness,
+                               range: 0...1, low: "Gentle", high: "Sharp",
+                               help: "Gentle: a slight turn switches between horizontal and vertical. Sharp: only a near right angle does.")
+                }
+                Text("Applies to every cursor speed, target assist and drags.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
             Section("Feel") {
                 EndsSlider(title: "Steadiness", value: $settings.config.steadiness, range: 0...1,

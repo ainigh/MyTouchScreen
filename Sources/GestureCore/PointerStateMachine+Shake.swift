@@ -157,18 +157,21 @@ extension PointerStateMachine {
                 freeze = nil
                 if let display = router.current {
                     let heldBox = ActiveBoxMapper.boxPoint(fromScreen: held.point, on: display)
-                    if config.pointerResponse.isDirect {
+                    if config.pointerResponse.isDirect && config.trajectory == .free {
                         glide = (heldBox - (rawBox + warpOffset), time)
                         smoother.reset(to: heldBox, at: time)
                     } else {
-                        // Scaled response: the cursor isn't under the finger anyway, so it simply
-                        // carries on from the held point (a glide would be scaled too).
+                        // Scaled response or straight lines: the cursor isn't under the finger
+                        // anyway, so it simply carries on from the held point (a glide would be
+                        // scaled, or bent onto one axis, and move a still cursor).
                         smoother.reset(hand: rawBox + warpOffset, cursor: heldBox, at: time)
+                        if config.pointerResponse.isDirect { trajectoryLock.reset(holding: held.point) }
                     }
                 }
             } else {
                 freeze = held
                 assist.reset()
+                trajectoryLock.reset()
                 cursor = held.point
                 // Kept in the history: a wiggle that starts while the cursor is held (a double
                 // click) clicks right here.
@@ -195,10 +198,14 @@ extension PointerStateMachine {
             lastRawBox = box
             smoother.reset(to: box, at: time)
             assist.reset()
+            trajectoryLock.reset()
             out.events.append(.displayChanged(jumped.id))
         }
         guard let display = router.current else { return out }
-        let finger = ActiveBoxMapper.screenPoint(fromBox: smoother.process(box, at: time), on: display)
+        let smoothed = ActiveBoxMapper.screenPoint(fromBox: smoother.process(box, at: time), on: display)
+        // The trajectory shapes every cursor path, drags included.
+        let finger = trajectoryLock.process(finger: smoothed, at: time, bounds: display.frame,
+                                            trajectory: config.trajectory, turnSharpness: config.turnSharpness)
         let screen: Point2
         if state == .dragging {
             // A drag follows the fist as is: being pulled onto controls would drop things wrong.

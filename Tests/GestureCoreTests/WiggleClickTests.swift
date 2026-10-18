@@ -4,7 +4,13 @@ import XCTest
 /// The gestures: the cursor goes where the finger points (a laser pointer, at every speed), a
 /// wiggle clicks where it began, a fist drags (open it to drop), two open palms toggle engagement.
 final class WiggleClickTests: XCTestCase {
-    private let config = GestureConfig()
+    /// The laser pointer: these check that the cursor lands exactly where the finger points, so
+    /// they run with the free trajectory (straight lines are covered in TrajectoryLockTests).
+    private let config: GestureConfig = {
+        var c = GestureConfig()
+        c.trajectory = .free
+        return c
+    }()
 
     /// The other hand in a frame: its pose and offset (hand space) from its spot on the
     /// camera's right.

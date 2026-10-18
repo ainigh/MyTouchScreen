@@ -32,6 +32,11 @@ public struct GestureConfig: Equatable, Codable {
     public var edgeOvershoot = 0.04
     /// Cursor speed vs hand speed (presets to try). `.direct` is the laser pointer.
     public var pointerResponse: PointerResponse = .direct
+    /// The cursor's path: horizontal or vertical only (the default), or free.
+    public var trajectory: Trajectory = .straight
+    /// 0…1: how sharp a turn switches a straight trajectory between horizontal and vertical
+    /// (35° at 0, 55° at 0.5, 75° at 1).
+    public var turnSharpness = 0.5
     /// Slow down near, and pull into, the buttons and links the hand is reaching for.
     public var assist = TargetAssistParams()
 
@@ -101,6 +106,8 @@ extension GestureConfig {
         restDeadZoneBox = defaults.restDeadZoneBox
         restLockDelay = defaults.restLockDelay
         pointerResponse = defaults.pointerResponse
+        trajectory = defaults.trajectory
+        turnSharpness = defaults.turnSharpness
     }
 
     /// Decode settings JSON written by any version: keys missing from `data` keep their default
