@@ -250,7 +250,7 @@ private struct PointerSettings: View {
 
     private let howItWorks = "Wisp is an invisible laser pointer: the cursor follows your hand and holds still while your hand does. By default your hand's shape picks the direction (Fist steering below). How you click, drag and zoom is chosen in the Gestures tab. Both open palms turn Wisp on and off."
 
-    private let fistSteeringHelp = "Open hand: the cursor moves up and down only. Fist: it moves left and right only; move the fist up or down to scroll (the cursor stays put), or hold it still to click. While this is on, the fist doesn't drag and the Trajectory setting rests."
+    private let fistSteeringHelp = "Open hand (thumb up, as if to shake hands): the cursor moves up and down only. Fist with the thumb up: left and right only. The thumb is the mouse button: tuck it in and lift it again to click; keep it in (a full fist) and move up or down to scroll, like pulling a rope; keep it in and hold still to grab, then move and lift the thumb to drop. While this is on, the Trajectory setting rests."
 
     var body: some View {
         Form {
@@ -261,18 +261,15 @@ private struct PointerSettings: View {
                 Toggle("Fist steers: open hand up/down, fist left/right", isOn: $settings.config.fistSteering)
                 Text(fistSteeringHelp).font(.caption).foregroundStyle(.secondary)
                 if settings.config.fistSteering {
-                    EndsSlider(title: "Hold a still fist to click", value: $settings.config.fistClickHold,
-                               range: 0.3...1.5, low: "Quick", high: "Long",
-                               help: String(format: "%.1f s. The ring around the cursor fills meanwhile; move the fist to cancel.",
-                                            settings.config.fistClickHold))
-                    Toggle("Thumbs up / thumbs down scrolls", isOn: $settings.config.thumbScroll)
-                    Text("A fist with the thumb up scrolls up, thumb down scrolls down, faster the longer you hold it. The cursor stays put.")
-                        .font(.caption).foregroundStyle(.secondary)
-                    EndsSlider(title: "Fist scroll speed", value: $settings.config.scrollSpeed, range: 0.3...3,
+                    EndsSlider(title: "Hold the grip still to grab (drag)", value: $settings.config.gripDragHold,
+                               range: 0.3...1.2, low: "Quick", high: "Long",
+                               help: String(format: "%.1f s with the thumb tucked in and the fist still. The ring around the cursor fills meanwhile; lift the thumb sooner, or move up or down to scroll instead.",
+                                            settings.config.gripDragHold))
+                    EndsSlider(title: "Grip scroll speed", value: $settings.config.scrollSpeed, range: 0.3...3,
                                low: "Slow", high: "Fast")
                     Toggle("Scroll direction follows the system (Natural scrolling)", isOn: $settings.scrollFollowsSystem)
                     if !settings.scrollFollowsSystem {
-                        Toggle("Natural scrolling: fist down moves the page down", isOn: $settings.config.naturalScrolling)
+                        Toggle("Natural scrolling: pulling down moves the page down", isOn: $settings.config.naturalScrolling)
                     }
                 }
             }
@@ -419,7 +416,7 @@ private struct GestureSettings: View {
                 .labelsHidden()
                 Text(settings.config.dragGesture.summary).font(.caption).foregroundStyle(.secondary)
                 if settings.config.fistSteering && settings.config.dragGesture.contact == .fist {
-                    Text("Fist steering is on (Pointer tab), so the fist steers and clicks instead of dragging. Pick a pinch or the thumb trigger here to drag.")
+                    Text("Fist steering is on (Pointer tab): drag by gripping (thumb tucked in) and holding still, then lift the thumb to drop. This choice applies when fist steering is off.")
                         .font(.caption).foregroundStyle(Color(nsColor: Theme.warning))
                 }
             }

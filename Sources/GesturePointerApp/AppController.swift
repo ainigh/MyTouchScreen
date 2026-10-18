@@ -517,8 +517,8 @@ final class AppController: MenuBarActions {
         let c = settings.config
         if c.fistSteering {
             let drag = c.dragGesture.contact == .fist ? "" : c.dragGesture.hint
-            return (["open hand up/down, fist left/right", "fist up/down scrolls",
-                     c.thumbScroll ? "thumb up/down scrolls" : "", "still fist clicks",
+            return (["open hand up/down, thumb-up fist left/right", "thumb in and out clicks",
+                     "grip and pull scrolls", "grip and hold grabs",
                      c.clickGesture.contact == .fist ? "" : c.clickGesture.hint, drag, c.zoomGesture.hint]
                 .filter { !$0.isEmpty }).joined(separator: "; ")
         }

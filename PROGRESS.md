@@ -150,7 +150,7 @@ Resume from the first unchecked item. Tick only after verification per `CLAUDE.m
 - [x] Fist confirmed after 0.25 s from first sight with the cursor held (flickers release with no jump); look-back on confirm; open confirmed after 0.08 s with a settle hold
 - [x] Tests (144): FistSteeringTests incl. owner recording; fist-drag tests run with `GestureConfig.classic`
 - [x] Mac: Settings → Pointer → Fist steering (toggle, hold time, scroll speed, scroll direction), menu toggle, hint, halo dot; Trajectory section disabled while on; Gestures tab note when a fist drag preset is shadowed
-- [x] Thumbs up / down on a fist scrolls up / down while held (ramping), cursor held, no click; `thumbScroll` toggle (default on); tests (148)
+- [x] Revised (owner request): thumb is the button — thumb-up fist = horizontal, thumb flick = click, grip + pull = scroll (rope), grip + hold = grab / lift thumb = drop; still-fist click and thumbs-up/down scroll replaced; tests (150)
 - [x] docs/fist-steering.md (concept doc), README, DECISIONS
 - [x] Committed
 

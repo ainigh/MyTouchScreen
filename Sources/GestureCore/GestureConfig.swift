@@ -38,13 +38,12 @@ public struct GestureConfig: Equatable, Codable {
     /// (35° at 0, 55° at 0.5, 75° at 1).
     public var turnSharpness = 0.5
     /// Fist steering (on by default; overrides `trajectory`): an open hand moves the cursor
-    /// vertically only, a fist horizontally only; a fist moved up and down scrolls, and a fist
-    /// held still clicks. The fist then no longer drags.
+    /// vertically only, a fist with the thumb up horizontally only, and the thumb is the mouse
+    /// button: tuck it in and lift it to click, grip and move up/down to scroll, grip and hold
+    /// still to grab and drag. See docs/fist-steering.md.
     public var fistSteering = true
-    /// Fist steering: a fist held still this long clicks (seconds).
-    public var fistClickHold = 0.6
-    /// Fist steering: a fist with the thumb up scrolls up, thumb down scrolls down.
-    public var thumbScroll = true
+    /// Fist steering: the thumb held tucked in, still, this long grabs (mouse down) to drag.
+    public var gripDragHold = 0.5
     /// Slow down near, and pull into, the buttons and links the hand is reaching for.
     public var assist = TargetAssistParams()
 

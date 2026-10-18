@@ -1,165 +1,140 @@
 # Fist steering
 
-*Your hand's shape picks the direction. Open hand: up and down. Fist: left and right.*
+*Your hand's shape picks the direction, and your thumb is the mouse button.*
 
 Fist steering is Wisp's default way of moving the cursor (Settings → Pointer → **Fist steering**,
-or menu bar → **Fist Steering**). It turns pointing into two simple, separate controls instead of
-one free-floating one, so the cursor goes exactly where you mean and never drifts sideways while
-you aim up or down (or the other way round).
+or menu bar → **Fist Steering**). Each hand shape does one thing, so every movement can only do
+what that shape is for:
 
-## The idea in one picture
+| Hand | What it does |
+|---|---|
+| ✋ **Open hand**, thumb up (as if about to shake hands) | Moves the cursor **up and down** only |
+| ✊👍 **Fist, thumb up** ("hold") | Moves the cursor **left and right** only |
+| ✊ **Thumb tucked in** (a full fist, "grip") | **The mouse button.** The cursor can't move. |
 
-```
-        open hand ✋                         fist ✊
-   ┌──────────────────┐            ┌──────────────────────────┐
-   │        ▲         │            │                          │
-   │        │         │            │  ◀──────  cursor  ──────▶ │
-   │     cursor       │            │                          │
-   │        │         │            │  ▲ up/down = SCROLL       │
-   │        ▼         │            │  ● still   = CLICK        │
-   └──────────────────┘            └──────────────────────────┘
-   moves vertically only            moves horizontally only
-```
+Pressing the button, which means tucking the thumb in, is what clicks, scrolls and drags:
 
-Think of it as an Etch A Sketch with the knob chosen by your hand: the open hand turns the
-vertical knob, the fist turns the horizontal one. To reach something up and to the right, raise
-your open hand to its height, close your hand, and slide the fist across.
+| With the thumb tucked in… | Result |
+|---|---|
+| Lift it again straight away (a **flick**) | **Click** (two flicks: double click) |
+| Move the fist **up or down** | **Scroll**: the page follows your hand, like pulling a rope |
+| Hold the fist **still** for half a second (the ring fills) | **Grab**: mouse down. The fist then drags in any direction; lift the thumb to **drop**. |
 
-## What each hand does
+## The idea
 
-| Hand | Move up / down | Move left / right | Hold still |
-|---|---|---|---|
-| **Open hand** (pointing) | cursor moves up / down | nothing (ignored) | nothing — the cursor rests |
-| **Fist** | **scrolls** the page; the cursor stays put | cursor moves left / right | **clicks** after 0.6 s (the ring fills) |
-| **Fist, thumb up** 👍 | — | — | **scrolls up** while held, faster the longer; the cursor stays put |
-| **Fist, thumb down** 👎 | — | — | **scrolls down** while held, faster the longer; the cursor stays put |
+Start in the handshake position. Your hand is upright, thumb on top, and moving it up and down
+moves the cursor up and down. Close your fingers into a fist but keep the thumb up: now your hand
+"holds" the cursor, and moving it moves the cursor sideways only. Up and down do nothing in this
+shape, so the height you just set stays exactly where it is.
 
-Everything else is unchanged: both open palms still turn Wisp on and off, the wiggle still clicks
-with the open hand, and the shortcut still kills it instantly.
-
-## How a moment plays out
+The thumb then works like a mouse button sitting on top of your fist. Press it down onto your
+fingers and the cursor freezes. Press and release it quickly and that's a click. Keep it pressed
+and you're gripping: pull your fist down and the page comes down with it, as if you were pulling
+on a rope.
 
 ```
- open hand ──(fist seen)──▶ forming ──(held 0.25 s)──▶ fist
-    ▲                         │                          │
-    │                   (opens again:                    ├─ slide sideways → cursor moves ←→
-    │                    just a flicker,                 ├─ move up/down  → scroll (+ glide on release)
-    │                    cursor let go)                  ├─ hold still    → click (once; move to re-arm)
-    │                         │                          │
-    └─────────────────────────┴───────(open 0.08 s)──────┘
+   ✋ open hand ──── fingers close, thumb stays up ───▶ ✊👍 fist, thumb up
+   (up / down)  ◀──────────── hand opens ──────────────  (left / right)
+                                                           │      ▲
+                                             thumb tucks in│      │thumb lifts
+                                                           ▼      │
+                                                      ✊ grip (cursor held)
+                                                ┌─────────┼──────────────┐
+                                        lifted at once  moved up/down   held still ½ s
+                                             CLICK        SCROLL          GRAB → drag → lift = DROP
 ```
 
-1. **Forming a fist.** The moment Wisp sees a fist, it holds the cursor still. Curling your fingers
-   pulls your fingertip down, and without the hold that would drag the cursor down too.
-2. **Confirming.** A fist counts once it has been held for 0.25 s. Shorter "fists" are flickers:
-   hands half-close for a split second while they move. Those let the cursor go straight away and
-   change nothing. When the fist is confirmed, the cursor steps back to where it was just before
-   your fingers began to curl, and from then on follows your fist's palm.
-3. **In the fist.** Sliding sideways moves the cursor. Moving up or down by a clear amount
-   (mostly vertical, not a sideways slide that wobbles) starts a scroll. Holding still clicks.
-4. **Opening.** Once the hand has been open for a moment, the cursor follows your fingertip
-   again, vertically. It holds briefly while your fingers straighten, then carries on from
-   where it was.
+## Scrolling like a rope
 
-## Clicking with a still fist
+Gripping and pulling scrolls the page with your hand: pull down and the page comes down, which
+shows what's above. To keep going, go hand over hand, as if climbing a rope:
 
-- **Make a fist and hold it still:** it clicks after **0.6 s** (adjustable from 0.3 to 1.5 s).
-  The ring around the cursor fills meanwhile, so you can see it coming and move to cancel.
-- **Slide the fist onto something, then hold still:** it clicks there. Arriving and stopping is
-  the click.
-- **One click per stop.** After a click, the fist has to move before it can click again, so a fist
-  held for a long time doesn't machine-gun clicks.
-- **Scrolling cancels the click** for the rest of that fist: stopping after a scroll is not a
-  click. Open and close your hand to click after scrolling.
-- A double click is two still-fist clicks on the same spot close together, or the wiggle.
+1. **Grip** (tuck the thumb) and **pull** your fist down. The page scrolls.
+2. **Let go** by lifting the thumb. If your hand was still moving, the page glides on and slows down.
+3. **Reach back up** with the thumb still up. Your fist is in "hold" mode, which only moves
+   sideways, so the cursor doesn't move and nothing scrolls.
+4. **Grip and pull again.**
 
-## Scrolling with a fist
+To scroll the other way (like pulling a rope up out of the ground), grip and push up, let go, and
+reach back down.
 
-- **Up and down only.** The fist's vertical movement scrolls; the cursor stays exactly where it is,
-  because in a fist the cursor only moves sideways.
-- **It starts on purpose.** The fist must move about 4% of the screen height, and mostly
-  vertically (at least 1.5× more up/down than sideways), before scrolling starts. A sideways slide
-  that wobbles, or a fist held still to click, never scrolls by accident.
-- **Direction** follows macOS's *Natural scrolling* setting by default: with it on, moving the fist
-  down moves the content down, like dragging the page.
-- **Glide.** Open your hand while the fist is still moving and the page glides on and slows
-  naturally, like a trackpad flick.
-- **Speed and direction:** Settings → Pointer → *Fist scroll speed*, and *Scroll direction follows
-  the system* (untick it to choose the direction for Wisp alone).
+The page follows your hand when macOS's *Natural scrolling* is on, which is the default. If you
+turn natural scrolling off in System Settings, or untick *Scroll direction follows the system* in
+Wisp, it goes the other way.
 
-## Scrolling with your thumb
+## Dragging and dropping
 
-A fist with the **thumb up** scrolls up; with the **thumb down** it scrolls down
-(Settings → Pointer → *Thumbs up / thumbs down scrolls*, on by default).
+1. Move the cursor onto the item: up and down with the open hand, left and right with the thumb-up fist.
+2. **Grip** (tuck the thumb) and **hold still**. The ring around the cursor fills, and after half
+   a second the item is grabbed (mouse down).
+3. **Move your fist** anywhere. While dragging the cursor moves in **any direction**, not just
+   sideways, because items need to go anywhere.
+4. **Lift the thumb** to drop. Opening the whole hand drops too.
 
-- **Hold to keep going.** It scrolls for as long as the thumb stays out, starting gently
-  (about 400 points a second) and speeding up to about 1600 over two seconds. A quick thumbs-up
-  nudges the page, and a long one travels. *Fist scroll speed* scales both.
-- **Tuck the thumb to stop.** The fist then works as usual again: slide, scroll by moving, or
-  hold still to click.
-- **The cursor stays put.** Turning the wrist for a thumbs-down moves the palm, so the cursor is
-  held while the thumb scrolls.
-- **Up means up.** Thumbs up always shows what's above, whatever the natural-scrolling setting: it
-  points the way you want to go, like an arrow key, rather than dragging the page.
-- **It never clicks.** A thumb sticking out stops the still-fist click, even before the thumb
-  counts.
-- **How Wisp reads it.** The thumb counts as up or down when it sticks clearly out of the fist
-  (its tip well away from the index knuckle) and its last two segments point within about 40° of
-  straight up or down. It has to be held for 0.15 s to start, and tucked for 0.1 s to stop. These
-  thresholds are a first guess from synthetic hands. If it misfires, switch it off or record a
-  session.
+Grabbing and scrolling start the same way, by tucking the thumb. What you do next decides which:
+move up or down straight away and it scrolls; hold still and it grabs. That's how a touch screen
+tells a swipe from a long press.
+
+## The small print (why it behaves as it does)
+
+- **Closing your hand never moves the cursor.** Curling your fingers pulls your fingertip down,
+  which would drag the cursor down too. So the cursor holds from the first moment Wisp sees a
+  fist, and then carries on from where it was before your fingers began to curl.
+- **A fist counts after a quarter of a second.** Hands half-close for a split second while they
+  move (a recorded session is full of these). Those flickers change nothing, and the cursor is
+  let go at once.
+- **The thumb is read carefully.** "Tucked in" means the thumb tip is close to your curled fingers,
+  and "up" means it's clearly away from them. Anything in between keeps the last reading. A
+  change only counts once it has lasted a few frames, so one misread frame can't press or click.
+- **Only a deliberate flick clicks.** It has to start from a thumb-up fist, with your hand calm,
+  and be quick (under 0.4 s). A full fist made straight from the open hand, with the thumb
+  already tucked, grips but doesn't click when you lift the thumb. A press longer than a flick
+  but shorter than a grab does nothing.
+- **Scrolling has to be on purpose.** While gripping, the fist must move clearly up or down
+  (about 4% of the screen height, and mostly vertically) before it scrolls.
+- **Opening the hand** returns to up-and-down pointing. The cursor waits a moment while your
+  fingers straighten, because that swings the fingertip.
+- **The thumb thresholds are a first guess.** They were tuned on synthetic hands only (the thumb
+  tip within 0.28 hand sizes of the curled fingers counts as tucked; beyond 0.4 counts as up). If
+  clicks misfire or the thumb isn't recognised, record a session (see Tuning).
 
 ## How it fits with the other settings
 
 | Setting | With fist steering on |
 |---|---|
-| **Trajectory** (straight lines / free) | Rests: the hand's shape picks the axis instead of the hand's direction. |
+| **Trajectory** (straight lines / free) | Rests: the hand's shape picks the axis. |
 | **Cursor speed** presets | Still apply to how far the cursor moves. |
-| **Target assist** | Still applies: the cursor slows near buttons and settles onto them. A resting cursor can be pulled onto a target slightly off its axis. |
-| **Fist drag** / **quick-fist click** presets | Give way: the fist is busy steering. To drag, pick a pinch or the thumb trigger in Settings → Gestures. |
-| **Wiggle click** | Works with the open hand. A fist's back-and-forth is steering, never a wiggle. |
+| **Target assist** | Still applies: the cursor slows near buttons and settles onto them. |
+| **Drag** presets (Gestures tab) | The grip drags instead. Pinch and thumb-trigger presets still work too. The fist presets apply only with fist steering off. |
+| **Wiggle click** | Still works with the open hand. |
 | **Two open palms** | Still turn Wisp on and off. |
 
-Turning fist steering off brings back the previous behaviour exactly: the Trajectory setting, the
-fist dragging, and so on.
-
-## Why it is built this way
-
-- **Two separate axes beat one diagonal.** Aiming a camera-tracked finger at a small target is
-  hard because every small tremor moves the cursor in two directions at once. Splitting the job
-  means each movement can only disturb one coordinate, and the other one stays exactly put.
-- **Hand shape is an unmistakable switch.** Switching axes by direction alone (the *straight
-  lines* trajectory) has to guess, from how sharply you turn, whether you meant to change
-  direction. A fist removes the guess.
-- **The fist doubles as the button.** You're already making a fist to move sideways, so stopping
-  on the target and holding still is the shortest possible way to click there. Up/down is free in
-  a fist, which makes it the natural place for scrolling.
-- **The timings come from real hands.** The 0.25 s confirmation comes from a recorded session in
-  which hands made 0.1–0.2 s "fists" while just moving. The holds around closing and opening the
-  hand exist because changing hand shape moves the fingertip even when the arm stays still.
+Turning fist steering off brings back the previous behaviour exactly.
 
 ## Tuning
 
 | You notice… | Try |
 |---|---|
-| Clicks happen when you only paused | Settings → Pointer → *Hold a still fist to click* toward **Long**. |
-| Clicking feels slow | Same slider toward **Quick**. |
-| Scrolling is too fast or too slow | *Fist scroll speed*. |
-| Scrolling goes the wrong way | Settings → Pointer → untick *Scroll direction follows the system* and set *Natural scrolling* yourself (or change it in System Settings). |
-| You want to drag | Gestures tab → Drag: a pinch or the thumb trigger. |
+| Grabs happen when you meant to click | Flick faster, or set *Hold the grip still to grab* toward **Long**. |
+| Grabbing takes too long | The same slider toward **Quick**. |
+| Scrolling is too fast or too slow | *Grip scroll speed*. |
+| Scrolling goes the wrong way for you | Untick *Scroll direction follows the system* and set *Natural scrolling* yourself. |
+| The thumb isn't recognised, or clicks happen by themselves | Record a session (below) and send it. The thumb thresholds need real hands. |
 | You'd rather point freely | Turn *Fist steering* off (menu bar or Settings → Pointer). |
 
-If something misfires, use **Record Session for Tuning** in the menu, reproduce it, and send the
-file back. The recording replays exactly, fist steering included, through `gesture-replay` on any
-machine.
+**Record Session for Tuning** in the menu saves exactly what the camera saw. Reproduce the
+problem and send the file. It replays the same way on any machine through `gesture-replay`.
 
 ## Where it lives in the code
 
-- `Sources/GestureCore/PointerStateMachine+FistSteering.swift`: the mode: forming and
-  confirming the fist, scroll, still-fist click, and the hand-shape switch.
+- `Sources/GestureCore/PointerStateMachine+FistSteering.swift`: the mode. It covers the fist
+  forming, the thumb reading, the grip (click, scroll, grab) and the drop.
 - `Sources/GestureCore/TrajectoryLock.swift`: keeps the cursor on one axis. Fist steering tells it
-  which axis (`forcedAxis`).
-- `Tests/GestureCoreTests/FistSteeringTests.swift`: what the mode promises, including a replay of
-  a real recorded session.
-- Settings: `GestureConfig.fistSteering` (on by default), `fistClickHold` and `thumbScroll` (on
-  by default). Scroll speed and direction are `scrollSpeed` and `naturalScrolling`.
+  which axis (`forcedAxis`); a grab drags freely.
+- `Tests/GestureCoreTests/FistSteeringTests.swift`: what the mode promises:
+  - flick, double flick, slow press and misread frame
+  - grip scroll and rope climbing
+  - grab and drop, and a full fist made straight from the open hand
+  - a replay of a real recorded session
+- Settings: `GestureConfig.fistSteering` (on by default) and `gripDragHold` (0.5 s). Scroll speed
+  and direction are `scrollSpeed` and `naturalScrolling`.

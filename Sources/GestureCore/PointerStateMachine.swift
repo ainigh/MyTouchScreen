@@ -497,7 +497,7 @@ public final class PointerStateMachine {
         snapshot.displayID = router.current?.id
         snapshot.engageProgress = engageProgress(at: time)
         snapshot.isHeld = isEngaged && freeze != nil
-        snapshot.clickProgress = isEngaged ? max(dwellProgress(at: time), fistClickProgress(at: time)) : 0
+        snapshot.clickProgress = isEngaged ? max(dwellProgress(at: time), gripProgress(at: time)) : 0
         snapshot.isScrolling = isEngaged && steer.scrolling
         snapshot.isSteeringFist = isEngaged && steer.isFist
         snapshot.isZooming = isEngaged && zoomMetric != nil

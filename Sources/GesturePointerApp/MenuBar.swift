@@ -135,7 +135,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         let config = actions.gestureConfig
         let steering = item("Fist Steering", #selector(toggleFistSteering))
         steering.state = config.fistSteering ? .on : .off
-        steering.toolTip = "Open hand moves the cursor up and down, a fist left and right; a fist moved up or down scrolls, held still clicks."
+        steering.toolTip = "Open hand moves the cursor up and down, a thumb-up fist left and right. The thumb is the button: tuck and lift to click, grip and pull to scroll, grip and hold to drag."
         menu.addItem(steering)
         menu.addItem(presetMenu("Trajectory", Trajectory.allCases.map {
             PresetChoice(title: $0.title, tip: $0.summary, tag: "trajectory:" + $0.rawValue, isOn: config.trajectory == $0)
