@@ -97,7 +97,8 @@ final class TargetScanner {
         if let root {
             enableManualAccessibility(for: root)
             let defaultButton = elementAttribute(root, "AXDefaultButton")
-            walk(root, region: region, deadline: now + Self.budget, defaultButton: defaultButton,
+            // The budget starts here: finding the root can itself take a few round trips.
+            walk(root, region: region, deadline: CACurrentMediaTime() + Self.budget, defaultButton: defaultButton,
                  found: &found, seen: &seen)
         }
         // Whatever is right under the pointer counts even if the walk ran out of budget first.
@@ -115,22 +116,29 @@ final class TargetScanner {
         }
     }
 
-    /// Depth-first walk of `root`, collecting targets inside `region`.
+    /// Depth-first walk of `root`, collecting targets inside `region`. Each element carries the
+    /// visible area it can show in (`clip`): rows and links scrolled out of a scroll area or web
+    /// page still report frames, under toolbars and other panes, and must not count.
     private func walk(_ root: AXUIElement, region: CGRect, deadline: CFTimeInterval, defaultButton: AXUIElement?,
                       found: inout [AssistTarget], seen: inout Set<Int>) {
-        var stack: [(element: AXUIElement, depth: Int)] = [(root, 0)]
+        var stack: [(element: AXUIElement, depth: Int, clip: CGRect)] = [(root, 0, region)]
         var visited = 0
         while let entry = stack.popLast() {
             let element = entry.element
             let depth = entry.depth
+            var clip = entry.clip
             visited += 1
-            if visited > Self.maxVisited || (visited % 32 == 0 && CACurrentMediaTime() > deadline) { return }
+            // Every visit is a round trip or more to another app: check the clock each time.
+            if visited > Self.maxVisited || CACurrentMediaTime() > deadline { return }
             let info = basics(of: element)
-            if let frame = info.frame, frame.width > 0, frame.height > 0, !frame.intersects(region) {
-                continue // Out of reach, and so is everything inside it.
+            // An open menu hangs outside the menu bar item (or button) it belongs to.
+            if info.role == "AXMenu" { clip = region }
+            if let frame = info.frame, frame.width > 0, frame.height > 0 {
+                guard frame.intersects(clip) else { continue } // Out of view, and so is everything inside it.
+                if Self.clippingRoles.contains(info.role ?? "") { clip = clip.intersection(frame) }
             }
             if info.enabled != false, let frame = info.frame, frame.width >= 2, frame.height >= 2,
-               region.intersects(frame),
+               clip.intersects(frame),
                let kind = targetKind(of: element, role: info.role, subrole: info.subrole, frame: frame) {
                 let target = Self.target(element, frame: frame, kind: kind,
                                          isDefault: defaultButton.map { CFEqual($0, element) } ?? false)
@@ -140,10 +148,13 @@ final class TargetScanner {
             }
             guard depth < Self.maxDepth else { continue }
             for child in children(of: element, role: info.role).reversed() {
-                stack.append((child, depth + 1))
+                stack.append((child, depth + 1, clip))
             }
         }
     }
+
+    /// Containers that show only part of their content: children outside them are hidden.
+    private static let clippingRoles: Set<String> = ["AXWindow", "AXScrollArea", "AXWebArea"]
 
     /// Targets whose children are part of them, not separate targets.
     private static let leafKinds: Set<TargetKind> = [.button, .link, .toggle, .field]

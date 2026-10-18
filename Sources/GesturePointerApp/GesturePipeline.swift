@@ -21,6 +21,8 @@ final class GesturePipeline {
     /// Targets from the scanner, waiting to ride along with the next frame (so a recording
     /// captures them where they changed). Pipeline queue only.
     private var pendingTargets: [AssistTarget]?
+    /// The latest targets, so a recording started mid-session begins with them.
+    private var currentTargets: [AssistTarget] = []
 
     /// Print one line per frame (`--no-overlay` headless mode). Pipeline queue only.
     private var printsFrames = false
@@ -98,7 +100,10 @@ final class GesturePipeline {
 
     /// New clickable targets around the pointer (target assist), from any thread.
     func update(targets: [AssistTarget]) {
-        queue.async { self.pendingTargets = targets }
+        queue.async {
+            self.pendingTargets = targets
+            self.currentTargets = targets
+        }
     }
 
     func update(displays: [DisplayInfo]) {
@@ -119,6 +124,8 @@ final class GesturePipeline {
         queue.async {
             self.recorder?.close()
             self.recorder = writer
+            // The first recorded frame carries the targets already in play.
+            self.pendingTargets = self.currentTargets
         }
     }
 

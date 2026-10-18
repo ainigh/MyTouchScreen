@@ -175,7 +175,7 @@ final class AppController: MenuBarActions {
                                                       controller: AppController) -> ([AssistTarget]) -> Void {
         return { [weak controller] targets in
             pipeline.update(targets: targets)
-            DispatchQueue.main.async {
+            DispatchQueue.main.async { [weak controller] in
                 MainActor.assumeIsolated { controller?.overlay?.showTargets(targets) }
             }
         }
